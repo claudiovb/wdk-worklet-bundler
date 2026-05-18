@@ -267,7 +267,7 @@ export function installDependencies (
   projectRoot: string,
   options: { verbose?: boolean } = {}
 ): InstallResult {
-  const { execSync } = require('child_process')
+  const { execFileSync } = require('child_process')
 
   const packages = missing.filter(
     (m) => !m.startsWith('.') && !m.startsWith('/')
@@ -291,9 +291,10 @@ export function installDependencies (
 
   const packageManager = detectPackageManager(projectRoot)
   const command = generateInstallCommand(packages, packageManager)
+  const subcmd = packageManager === 'npm' ? 'install' : 'add'
 
   try {
-    execSync(command, {
+    execFileSync(packageManager, [subcmd, ...packages], {
       cwd: projectRoot,
       stdio: options.verbose ? 'inherit' : 'pipe'
     })
@@ -346,7 +347,7 @@ export function uninstallDependencies (
   projectRoot: string,
   options: { verbose?: boolean } = {}
 ): UninstallResult {
-  const { execSync } = require('child_process')
+  const { execFileSync } = require('child_process')
 
   const npmPackages = packages.filter(
     (m) => !m.startsWith('.') && !m.startsWith('/')
@@ -363,9 +364,10 @@ export function uninstallDependencies (
 
   const packageManager = detectPackageManager(projectRoot)
   const command = generateUninstallCommand(npmPackages, packageManager)
+  const subcmd = packageManager === 'npm' ? 'uninstall' : 'remove'
 
   try {
-    execSync(command, {
+    execFileSync(packageManager, [subcmd, ...npmPackages], {
       cwd: projectRoot,
       stdio: options.verbose ? 'inherit' : 'pipe'
     })

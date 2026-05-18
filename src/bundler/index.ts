@@ -5,7 +5,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import type { ResolvedConfig } from '../config/types'
 import { generateEntryPoint } from '../generators/entry'
 import { generateJsonRpcEntryPoint } from '../generators/entry-jsonrpc'
@@ -66,7 +66,7 @@ function runBarePack (options: BarePackOptions): void {
   }
 
   try {
-    execSync(`npx ${args.join(' ')}`, {
+    execFileSync('npx', args, {
       cwd,
       stdio: verbose === true ? 'inherit' : 'pipe'
     })
