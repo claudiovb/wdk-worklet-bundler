@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-const CLI_PATH = path.resolve(__dirname, '../../dist/cli.cjs')
+const CLI_PATH = path.resolve(__dirname, '../../dist/cli.js')
 
 describe('CLI Integration Tests', () => {
   let tempDir: string
