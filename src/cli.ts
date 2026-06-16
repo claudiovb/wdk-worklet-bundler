@@ -11,6 +11,33 @@ import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DE
 import { printBanner } from './utils/banner'
 import { WdkBundleConfig } from './config/types'
 
+interface GenerateOptions {
+  config?: string
+  install?: boolean
+  keepArtifacts?: boolean
+  dryRun?: boolean
+  verbose?: boolean
+  types?: boolean
+  sourceOnly?: boolean
+  skipGeneration?: boolean
+}
+
+interface InitOptions {
+  yes?: boolean
+}
+
+interface ValidateOptions {
+  config?: string
+}
+
+interface ListModulesOptions {
+  json?: boolean
+}
+
+interface CleanOptions {
+  yes?: boolean
+}
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pkg = require('../package.json')
 
@@ -58,7 +85,7 @@ program
   .option('--no-types', 'Skip TypeScript declaration generation')
   .option('--source-only', 'Only generate source files (skip bare-pack)')
   .option('--skip-generation', 'Skip artifact generation and use existing files')
-  .action(async (options) => {
+  .action(async (options: GenerateOptions) => {
     const { loadConfig } = await import('./config/loader')
     const {
       validateDependencies,
@@ -267,7 +294,7 @@ program
   .command('init')
   .description('Create a new wdk.config.js file')
   .option('-y, --yes', 'Use defaults without prompting')
-  .action(async (options) => {
+  .action(async (options: InitOptions) => {
     const configPath = path.join(process.cwd(), 'wdk.config.js')
 
     if (fs.existsSync(configPath) && !options.yes) {
@@ -293,7 +320,7 @@ program
   .command('validate')
   .description('Validate configuration without building')
   .option('-c, --config <path>', 'Path to config file')
-  .action(async (options) => {
+  .action(async (options: ValidateOptions) => {
     const { loadConfig } = await import('./config/loader')
     const { validateDependencies } = await import('./validators/dependencies')
 
@@ -330,7 +357,7 @@ program
   .command('list-modules')
   .description('List available WDK modules')
   .option('--json', 'Output as JSON')
-  .action((options) => {
+  .action((options: ListModulesOptions) => {
     const modules = [
       { name: '@tetherto/wdk', description: 'WDK Core', required: true },
       { name: '@tetherto/wdk-wallet-evm', description: 'EVM chains (EOA)' },
@@ -358,7 +385,7 @@ program
   .command('clean')
   .description('Remove generated .wdk folder')
   .option('-y, --yes', 'Skip confirmation')
-  .action(async (options) => {
+  .action(async (options: CleanOptions) => {
     const wdkDir = path.join(process.cwd(), DEFAULT_OUTPUT_DIR)
 
     if (!fs.existsSync(wdkDir)) {
