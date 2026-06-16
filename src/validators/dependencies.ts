@@ -2,6 +2,13 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 
+interface PackageJson {
+  name: string
+  version: string
+  dependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
+}
+
 export interface ModuleInfo {
   name: string
   path: string
@@ -23,11 +30,11 @@ export function resolveModule (
     const absolutePath = path.resolve(projectRoot, modulePath)
     if (fs.existsSync(absolutePath)) {
       const pkgPath = path.join(absolutePath, 'package.json')
-      let pkg = { name: path.basename(absolutePath), version: 'local' }
+      let pkg: PackageJson = { name: path.basename(absolutePath), version: 'local' }
 
       if (fs.existsSync(pkgPath)) {
         try {
-          pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+          pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as PackageJson
         } catch {
           // Use default if package.json is malformed
         }
@@ -54,9 +61,9 @@ export function resolveModule (
     return null
   }
 
-  let pkg: { name: string, version: string }
+  let pkg: PackageJson
   try {
-    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as PackageJson
   } catch {
     return null
   }
@@ -145,9 +152,9 @@ export function checkOptionalPeerDependencies (
     if (!fs.existsSync(pkgPath)) continue
 
     try {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as PackageJson
 
-      const peerDeps: Record<string, string> = pkg.peerDependencies || {}
+      const peerDeps: Record<string, string> = pkg.peerDependencies ?? {}
       for (const [peerName, range] of Object.entries(peerDeps)) {
         if (IGNORED_PREFIXES.some(prefix => peerName.startsWith(prefix)) || peerName === 'react-native') {
           log(`  [scan] Skipping ignored peer: ${peerName}`)
@@ -178,7 +185,7 @@ export function checkOptionalPeerDependencies (
         }
       }
 
-      const deps = pkg.dependencies || {}
+      const deps: Record<string, string> = pkg.dependencies ?? {}
       for (const depName of Object.keys(deps)) {
         if (IGNORED_PREFIXES.some(prefix => depName.startsWith(prefix)) || depName === 'react-native') {
           log(`  [scan] Skipping ignored dep: ${depName}`)
