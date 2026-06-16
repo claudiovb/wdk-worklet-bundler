@@ -34,10 +34,10 @@ async function loadConfigFile (filepath: string): Promise<WdkBundleConfig> {
   if (ext === '.json' || filepath.endsWith('.wdkrc')) {
     const content = fs.readFileSync(filepath, 'utf-8')
     try {
-      return JSON.parse(content)
+      return JSON.parse(content) as WdkBundleConfig
     } catch (error) {
       throw new Error(
-        `Invalid JSON in config file ${filepath}: ${error instanceof Error ? error.message : error}`
+        `Invalid JSON in config file ${filepath}: ${error instanceof Error ? error.message : String(error)}`
       )
     }
   }

@@ -256,7 +256,7 @@ export async function generateBundle (
     // Step 5: Generate TypeScript declarations (optional)
     if (!options.skipTypes) {
       if (verbose) log('  Generating TypeScript declarations...')
-      await generateTypeDeclarations(config)
+      generateTypeDeclarations(config)
     }
 
     // Step 6: Generate index.js for easy importing
@@ -285,7 +285,7 @@ export async function generateBundle (
 /**
  * Generate TypeScript declarations for the bundle
  */
-async function generateTypeDeclarations (config: ResolvedConfig): Promise<void> {
+function generateTypeDeclarations (config: ResolvedConfig): void {
   // Generate index.d.ts in .wdk folder for proper module resolution
   const generatedDir = path.join(config.projectRoot, '.wdk')
   const indexDtsPath = path.join(generatedDir, 'index.d.ts')

@@ -9,7 +9,7 @@ import fs from 'fs'
 import path from 'path'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR } from './constants'
 import { printBanner } from './utils/banner'
-import { WdkBundleConfig } from './config/types'
+import type { WdkBundleConfig } from './config/types'
 import pkg from '../package.json'
 
 interface GenerateOptions {
@@ -276,7 +276,7 @@ program
             fs.rmSync(generatedDir, { recursive: true, force: true })
             if (options.verbose) console.log(`  ✓ Removed ${generatedDir}\n`)
           } catch (e) {
-            console.log(`  ⚠️  Failed to cleanup ${generatedDir}: ${e}\n`)
+            console.log(`  ⚠️  Failed to cleanup ${generatedDir}: ${String(e)}\n`)
           }
         }
       } else {
@@ -292,7 +292,7 @@ program
   .command('init')
   .description('Create a new wdk.config.js file')
   .option('-y, --yes', 'Use defaults without prompting')
-  .action(async (options: InitOptions) => {
+  .action((options: InitOptions) => {
     const configPath = path.join(process.cwd(), 'wdk.config.js')
 
     if (fs.existsSync(configPath) && !options.yes) {
@@ -419,14 +419,12 @@ program
   })
 
 function generateConfigTemplate (
-  networks: Record<string, any>,
+  networks: Record<string, { package: string }>,
   preloadModules: string[]
 ): string {
   const networksStr = Object.entries(networks)
     .map(([key, value]) => {
-      // Clean value to be just package
-      const pkg = value.package || value
-      return `    ${key}: { package: '${pkg}' }`
+      return `    ${key}: { package: '${value.package}' }`
     })
     .join(',\n')
 
@@ -457,7 +455,7 @@ ${preloadStr}  // Output paths (optional, defaults shown)
   options: {
     // minify: false,
     // sourceMaps: false,
-    targets: ${DEFAULT_BUNDLE_BUILD_HOSTS}
+    targets: ${JSON.stringify(DEFAULT_BUNDLE_BUILD_HOSTS)}
   }
 };
 `
