@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { execFileSync } from 'child_process'
 
 export interface ModuleInfo {
   name: string
@@ -109,7 +110,7 @@ export function checkOptionalPeerDependencies (
   const visitedPaths = new Set<string>()
   const queue: Array<{ path: string, name: string }> = installedModules.map(m => ({ path: m.path, name: m.name }))
 
-  const log = (msg: string) => {
+  const log = (msg: string): void => {
     if (options.verbose) console.log(msg)
   }
 
@@ -267,8 +268,6 @@ export function installDependencies (
   projectRoot: string,
   options: { verbose?: boolean } = {}
 ): InstallResult {
-  const { execFileSync } = require('child_process')
-
   const packages = missing.filter(
     (m) => !m.startsWith('.') && !m.startsWith('/')
   )
@@ -347,8 +346,6 @@ export function uninstallDependencies (
   projectRoot: string,
   options: { verbose?: boolean } = {}
 ): UninstallResult {
-  const { execFileSync } = require('child_process')
-
   const npmPackages = packages.filter(
     (m) => !m.startsWith('.') && !m.startsWith('/')
   )

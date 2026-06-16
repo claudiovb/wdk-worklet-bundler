@@ -72,7 +72,7 @@ function runBarePack (options: BarePackOptions): void {
 
     // Check for missing module error
     const match = output.match(/MODULE_NOT_FOUND: Cannot find module '(.+?)'/)
-    if (match && match[1]) {
+    if (match?.[1]) {
       const missingModule = match[1]
       const err = new Error(`Missing module: ${missingModule}`)
       ;(err as any).missingModule = missingModule
@@ -134,7 +134,7 @@ export async function generateBundle (
   const startTime = Date.now()
   const { dryRun, verbose, silent } = options
 
-  const log = (msg: string) => {
+  const log = (msg: string): void => {
     if (!silent) console.log(msg)
   }
 

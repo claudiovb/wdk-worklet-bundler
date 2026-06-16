@@ -34,7 +34,7 @@ function getPackageList (config: WdkBundleConfig): string[] {
 
   if (config.protocols != null) {
     for (const protocol of Object.values(config.protocols)) {
-      if (protocol && protocol.package) packages.add(protocol.package)
+      if (protocol?.package) packages.add(protocol.package)
     }
   }
 
