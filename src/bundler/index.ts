@@ -125,11 +125,6 @@ module.exports = {
 }
 `
   fs.writeFileSync(indexPath, indexContent)
-};
-`
-
-  const indexPath = path.join(outputDir, 'index.js')
-  fs.writeFileSync(indexPath, indexContent)
 }
 
 /**
