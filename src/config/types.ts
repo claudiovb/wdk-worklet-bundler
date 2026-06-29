@@ -14,7 +14,7 @@ export interface WdkBundleConfig {
   protocols?: {
     [protocolName: string]: {
       package: string
-      [key: string]: any
+      [key: string]: unknown
     }
   }
 

@@ -4,6 +4,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import type { WdkBundleConfig, ResolvedConfig } from './types'
 import { validateConfig } from './schema'
 import { DEFAULT_BUNDLE_PATH, DEFAULT_BUNDLE_PATH_JSONRPC, DEFAULT_TYPES_PATH, DEFAULT_IOS_ADDONS_DIR, DEFAULT_MACOS_ADDONS_DIR, DEFAULT_ANDROID_ADDONS_DIR, DEFAULT_ADDONS_YML_PATH } from '../constants'
@@ -33,23 +34,19 @@ async function loadConfigFile (filepath: string): Promise<WdkBundleConfig> {
   if (ext === '.json' || filepath.endsWith('.wdkrc')) {
     const content = fs.readFileSync(filepath, 'utf-8')
     try {
-      return JSON.parse(content)
+      return JSON.parse(content) as WdkBundleConfig
     } catch (error) {
       throw new Error(
-        `Invalid JSON in config file ${filepath}: ${error instanceof Error ? error.message : error}`
+        `Invalid JSON in config file ${filepath}: ${error instanceof Error ? error.message : String(error)}`
       )
     }
   }
 
-  // For JS files, clear require cache for hot reloading
-  const resolved = require.resolve(filepath)
-  delete require.cache[resolved]
-
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const config = require(filepath)
+  // For JS/MJS/CJS files, use dynamic import (supports both CommonJS and ESM)
+  const loaded = await import(pathToFileURL(filepath).href) as { default?: WdkBundleConfig } & WdkBundleConfig
 
   // Handle ES module default exports
-  return config.default || config
+  return loaded.default ?? loaded
 }
 
 export async function loadConfig (configPath?: string): Promise<ResolvedConfig> {

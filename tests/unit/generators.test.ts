@@ -20,7 +20,13 @@ describe('Code Generators', () => {
     projectRoot: '/test',
     resolvedOutput: {
       bundle: '/test/.wdk/wdk.bundle.js',
-      types: '/test/.wdk/wdk.d.ts'
+      types: '/test/.wdk/wdk.d.ts',
+      addons: {
+        ios: '/test/ios/addons',
+        macos: '/test/macos/addons',
+        android: '/test/android/addons'
+      },
+      addonsYml: '/test/addons.yml'
     },
     ...overrides
   })
@@ -30,24 +36,25 @@ describe('Code Generators', () => {
       const config = createMockConfig()
       const code = generateWalletModulesCode(config)
 
-      expect(code).toContain("const wdkModule = require('@tetherto/wdk', { with: { imports: 'bare-node-runtime/imports' }})")
-      expect(code).toContain('const WDK = wdkModule.default || wdkModule.WDK || wdkModule')
+      expect(code).toContain("const _wdkModule = require('@tetherto/wdk', { with: { imports: 'bare-node-runtime/imports' } })")
+      expect(code).toContain('WDK = _wdkModule.default || _wdkModule.WDK || _wdkModule')
     })
 
     it('should generate wallet module imports', () => {
       const config = createMockConfig()
       const code = generateWalletModulesCode(config)
 
-      expect(code).toContain("const WdkWalletEvmErc4337Raw = require('@tetherto/wdk-wallet-evm-erc-4337', { with: { imports: 'bare-node-runtime/imports' }})")
-      expect(code).toContain('const WdkWalletEvmErc4337 = WdkWalletEvmErc4337Raw.default || WdkWalletEvmErc4337Raw')
+      expect(code).toContain("if (network === 'ethereum') _mod = require('@tetherto/wdk-wallet-evm-erc-4337', { with: { imports: 'bare-node-runtime/imports' } })")
+      expect(code).toContain('if (_mod) _walletCache[network] = _mod.default || _mod')
     })
 
     it('should map networks to wallet managers', () => {
       const config = createMockConfig()
       const code = generateWalletModulesCode(config)
 
-      expect(code).toContain("walletManagers['ethereum'] = WdkWalletEvmErc4337")
-      expect(code).toContain("walletManagers['polygon'] = WdkWalletEvmErc4337")
+      expect(code).toContain("if (network === 'ethereum') _mod = require('@tetherto/wdk-wallet-evm-erc-4337'")
+      expect(code).toContain("if (network === 'polygon') _mod = require('@tetherto/wdk-wallet-evm-erc-4337'")
+      expect(code).toContain("has: (_, network) => ['ethereum', 'polygon'].includes(network)")
     })
 
     it('should handle preload modules', () => {
@@ -73,10 +80,9 @@ describe('Code Generators', () => {
       })
       const code = generateWalletModulesCode(config)
 
-      expect(code).toContain("const WdkWalletEvmErc4337Raw = require('@tetherto/wdk-wallet-evm-erc-4337'")
-      expect(code).toContain("const WdkWalletSparkRaw = require('@tetherto/wdk-wallet-spark'")
-      expect(code).toContain('walletManagers[\'ethereum\'] = WdkWalletEvmErc4337')
-      expect(code).toContain('walletManagers[\'spark\'] = WdkWalletSpark')
+      expect(code).toContain("if (network === 'ethereum') _mod = require('@tetherto/wdk-wallet-evm-erc-4337'")
+      expect(code).toContain("if (network === 'spark') _mod = require('@tetherto/wdk-wallet-spark'")
+      expect(code).toContain("has: (_, network) => ['ethereum', 'spark'].includes(network)")
     })
   })
 
