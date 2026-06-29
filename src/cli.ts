@@ -9,10 +9,35 @@ import fs from 'fs'
 import path from 'path'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR } from './constants'
 import { printBanner } from './utils/banner'
-import { WdkBundleConfig } from './config/types'
+import type { WdkBundleConfig } from './config/types'
+import pkg from '../package.json'
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pkg = require('../package.json')
+interface GenerateOptions {
+  config?: string
+  install?: boolean
+  keepArtifacts?: boolean
+  dryRun?: boolean
+  verbose?: boolean
+  types?: boolean
+  sourceOnly?: boolean
+  skipGeneration?: boolean
+}
+
+interface InitOptions {
+  yes?: boolean
+}
+
+interface ValidateOptions {
+  config?: string
+}
+
+interface ListModulesOptions {
+  json?: boolean
+}
+
+interface CleanOptions {
+  yes?: boolean
+}
 
 const program = new Command()
 
@@ -34,7 +59,7 @@ function getPackageList (config: WdkBundleConfig): string[] {
 
   if (config.protocols != null) {
     for (const protocol of Object.values(config.protocols)) {
-      if (protocol && protocol.package) packages.add(protocol.package)
+      if (protocol?.package) packages.add(protocol.package)
     }
   }
 
@@ -58,7 +83,7 @@ program
   .option('--no-types', 'Skip TypeScript declaration generation')
   .option('--source-only', 'Only generate source files (skip bare-pack)')
   .option('--skip-generation', 'Skip artifact generation and use existing files')
-  .action(async (options) => {
+  .action(async (options: GenerateOptions) => {
     const { loadConfig } = await import('./config/loader')
     const {
       validateDependencies,
@@ -251,7 +276,7 @@ program
             fs.rmSync(generatedDir, { recursive: true, force: true })
             if (options.verbose) console.log(`  ✓ Removed ${generatedDir}\n`)
           } catch (e) {
-            console.log(`  ⚠️  Failed to cleanup ${generatedDir}: ${e}\n`)
+            console.log(`  ⚠️  Failed to cleanup ${generatedDir}: ${String(e)}\n`)
           }
         }
       } else {
@@ -267,7 +292,7 @@ program
   .command('init')
   .description('Create a new wdk.config.js file')
   .option('-y, --yes', 'Use defaults without prompting')
-  .action(async (options) => {
+  .action((options: InitOptions) => {
     const configPath = path.join(process.cwd(), 'wdk.config.js')
 
     if (fs.existsSync(configPath) && !options.yes) {
@@ -293,7 +318,7 @@ program
   .command('validate')
   .description('Validate configuration without building')
   .option('-c, --config <path>', 'Path to config file')
-  .action(async (options) => {
+  .action(async (options: ValidateOptions) => {
     const { loadConfig } = await import('./config/loader')
     const { validateDependencies } = await import('./validators/dependencies')
 
@@ -330,7 +355,7 @@ program
   .command('list-modules')
   .description('List available WDK modules')
   .option('--json', 'Output as JSON')
-  .action((options) => {
+  .action((options: ListModulesOptions) => {
     const modules = [
       { name: '@tetherto/wdk', description: 'WDK Core', required: true },
       { name: '@tetherto/wdk-wallet-evm', description: 'EVM chains (EOA)' },
@@ -358,7 +383,7 @@ program
   .command('clean')
   .description('Remove generated .wdk folder')
   .option('-y, --yes', 'Skip confirmation')
-  .action(async (options) => {
+  .action(async (options: CleanOptions) => {
     const wdkDir = path.join(process.cwd(), DEFAULT_OUTPUT_DIR)
 
     if (!fs.existsSync(wdkDir)) {
@@ -394,14 +419,12 @@ program
   })
 
 function generateConfigTemplate (
-  networks: Record<string, any>,
+  networks: Record<string, { package: string }>,
   preloadModules: string[]
 ): string {
   const networksStr = Object.entries(networks)
     .map(([key, value]) => {
-      // Clean value to be just package
-      const pkg = value.package || value
-      return `    ${key}: { package: '${pkg}' }`
+      return `    ${key}: { package: '${value.package}' }`
     })
     .join(',\n')
 
@@ -432,7 +455,7 @@ ${preloadStr}  // Output paths (optional, defaults shown)
   options: {
     // minify: false,
     // sourceMaps: false,
-    targets: ${DEFAULT_BUNDLE_BUILD_HOSTS}
+    targets: ${JSON.stringify(DEFAULT_BUNDLE_BUILD_HOSTS)}
   }
 };
 `

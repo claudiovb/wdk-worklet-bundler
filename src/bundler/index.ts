@@ -37,6 +37,13 @@ interface BarePackOptions {
   verbose?: boolean
 }
 
+class MissingModuleError extends Error {
+  constructor (public readonly missingModule: string) {
+    super(`Missing module: ${missingModule}`)
+    this.name = 'MissingModuleError'
+  }
+}
+
 /**
  * Run bare-pack to create the final bundle
  */
@@ -64,19 +71,17 @@ function runBarePack (options: BarePackOptions): void {
       cwd,
       stdio: verbose === true ? 'inherit' : 'pipe'
     })
-  } catch (error: any) {
+  } catch (error) {
     // Try to extract stdout/stderr if available
-    const stderr = error.stderr ? error.stderr.toString() : ''
-    const stdout = error.stdout ? error.stdout.toString() : ''
+    const execError = error as { stderr?: Buffer | string, stdout?: Buffer | string }
+    const stderr: string = execError.stderr != null ? execError.stderr.toString() : ''
+    const stdout: string = execError.stdout != null ? execError.stdout.toString() : ''
     const output = stderr + stdout
 
     // Check for missing module error
     const match = output.match(/MODULE_NOT_FOUND: Cannot find module '(.+?)'/)
-    if (match && match[1]) {
-      const missingModule = match[1]
-      const err = new Error(`Missing module: ${missingModule}`)
-      ;(err as any).missingModule = missingModule
-      throw err
+    if (match?.[1]) {
+      throw new MissingModuleError(match[1])
     }
 
     // Re-throw original error if we couldn't parse it
@@ -134,7 +139,7 @@ export async function generateBundle (
   const startTime = Date.now()
   const { dryRun, verbose, silent } = options
 
-  const log = (msg: string) => {
+  const log = (msg: string): void => {
     if (!silent) console.log(msg)
   }
 
@@ -208,9 +213,9 @@ export async function generateBundle (
         cwd: config.projectRoot,
         verbose
       })
-    } catch (barePackError: any) {
+    } catch (barePackError) {
       // Check if we identified a missing module
-      if (barePackError.missingModule) {
+      if (barePackError instanceof MissingModuleError) {
         return {
           success: false,
           bundlePath: config.resolvedOutput.bundle,
@@ -251,7 +256,7 @@ export async function generateBundle (
     // Step 5: Generate TypeScript declarations (optional)
     if (!options.skipTypes) {
       if (verbose) log('  Generating TypeScript declarations...')
-      await generateTypeDeclarations(config)
+      generateTypeDeclarations(config)
     }
 
     // Step 6: Generate index.js for easy importing
@@ -280,7 +285,7 @@ export async function generateBundle (
 /**
  * Generate TypeScript declarations for the bundle
  */
-async function generateTypeDeclarations (config: ResolvedConfig): Promise<void> {
+function generateTypeDeclarations (config: ResolvedConfig): void {
   // Generate index.d.ts in .wdk folder for proper module resolution
   const generatedDir = path.join(config.projectRoot, '.wdk')
   const indexDtsPath = path.join(generatedDir, 'index.d.ts')
