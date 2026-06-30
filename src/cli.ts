@@ -247,7 +247,8 @@ program
 
         // User-facing files that must survive cleanup — these are the
         // documented import surface (`import { bundle } from './.wdk'`).
-        const KEEP = new Set(['index.js', 'index.d.ts'])
+        const KEEP = new Set(['index.js'])
+        if (options.types !== false) KEEP.add('index.d.ts')
 
         if (fs.existsSync(generatedDir)) {
           for (const entry of fs.readdirSync(generatedDir, { withFileTypes: true })) {
