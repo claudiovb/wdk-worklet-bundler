@@ -315,16 +315,24 @@ program
 
       // Cleanup intermediate files unless --keep-artifacts is set
       if (!options.keepArtifacts) {
-        if (options.verbose) console.log('🧹 Cleaning up intermediate files...\n')
-
+        if (options.verbose) console.log('Cleaning up intermediate files...\n')
         const generatedDir = path.join(config.projectRoot, DEFAULT_OUTPUT_DIR)
 
+        // User-facing files that must survive cleanup — these are the
+        // documented import surface (`import { bundle } from './.wdk'`).
+        const KEEP = new Set(['index.js'])
+        if (options.types !== false) KEEP.add('index.d.ts')
+
         if (fs.existsSync(generatedDir)) {
-          try {
-            fs.rmSync(generatedDir, { recursive: true, force: true })
-            if (options.verbose) console.log(`  ✓ Removed ${generatedDir}\n`)
-          } catch (e) {
-            console.log(`  ⚠️  Failed to cleanup ${generatedDir}: ${String(e)}\n`)
+          for (const entry of fs.readdirSync(generatedDir, { withFileTypes: true })) {
+            if (KEEP.has(entry.name)) continue
+            const entryPath = path.join(generatedDir, entry.name)
+            try {
+              fs.rmSync(entryPath, { recursive: true, force: true })
+              if (options.verbose) console.log(`  ✓ Removed ${entryPath}\n`)
+            } catch (e) {
+              console.log(`  ⚠️  Failed to cleanup ${entryPath}: ${String(e)}\n`)
+            }
           }
         }
       } else {
