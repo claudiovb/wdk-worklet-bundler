@@ -32,7 +32,7 @@ describe('CLI Integration Tests', () => {
     }
   }
 
-  const mockPackage = (name: string) => {
+  const mockPackage = (name: string): void => {
     const pkgPath = path.join(tempDir, 'node_modules', name)
     fs.mkdirSync(pkgPath, { recursive: true })
     fs.writeFileSync(
