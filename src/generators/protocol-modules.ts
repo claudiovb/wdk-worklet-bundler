@@ -42,7 +42,7 @@ export function generateProtocolModulesCode (config: ResolvedConfig): string {
   }
 
   for (const [pkgPath, varName] of packages) {
-    lines.push(`const ${varName}Raw = require('${pkgPath}', { with: { imports: 'bare-node-runtime/imports' }});`)
+    lines.push(`const ${varName}Raw = require('${pkgPath}', { with: { imports: 'bare-node-runtime/imports' } });`)
     lines.push(`const ${varName} = ${varName}Raw.default || ${varName}Raw;`)
   }
   lines.push('')
