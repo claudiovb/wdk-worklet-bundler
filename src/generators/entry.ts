@@ -17,6 +17,12 @@ export async function generateEntryPoint (config: ResolvedConfig, outputDir: str
 // DO NOT EDIT MANUALLY
 
 require('bare-node-runtime/global');
+
+// Force .mjs files to load as CJS (JSC has no js_create_module)
+if (Bare.platform === 'ios' || Bare.platform === 'darwin') {
+  module.constructor._extensions['.mjs'] = module.constructor._extensions['.js']
+}
+
 const { globalAgent: http1Agent } = require('bare-http1')
 const { globalAgent: httpsAgent } = require('bare-https')
 
