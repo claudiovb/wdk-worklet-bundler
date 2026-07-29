@@ -11,6 +11,8 @@ import { generateEntryPoint } from '../generators/entry'
 import { generateJsonRpcEntryPoint } from '../generators/entry-jsonrpc'
 import { linkAddons } from './addons'
 import { convertBundleEsmToCjs } from './convert-esm-to-cjs'
+import { validateDependencies, findMissingOptionalPeers } from '../validators/dependencies'
+import { getPackageList } from '../config/packages'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_OUTPUT_DIR, DEFAULT_ENTRY_FILENAME } from '../constants'
 
 export type { LinkAddonsOptions, LinkAddonsResult } from './addons'
@@ -22,6 +24,7 @@ export interface GenerateBundleOptions {
   silent?: boolean
   skipTypes?: boolean
   skipGeneration?: boolean
+  deferOptionalPeers?: boolean
 }
 
 export interface GenerateBundleResult {
@@ -41,6 +44,7 @@ interface BarePackOptions {
   targets: string[]
   cwd: string
   verbose?: boolean
+  defer?: string[]
 }
 
 class MissingModuleError extends Error {
@@ -54,7 +58,7 @@ class MissingModuleError extends Error {
  * Run bare-pack to create the final bundle
  */
 function runBarePack (options: BarePackOptions): void {
-  const { entryPath, outputPath, importsPath, targets, cwd, verbose } = options
+  const { entryPath, outputPath, importsPath, targets, cwd, verbose, defer } = options
 
   // Build args array to prevent command injection
   const args = ['--no-install', 'bare-pack']
@@ -64,6 +68,13 @@ function runBarePack (options: BarePackOptions): void {
       throw new Error(`Invalid target format: ${target}`)
     }
     args.push('--host', target)
+  }
+  for (const specifier of defer ?? []) {
+    // Validate npm package name format (optionally scoped)
+    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/i.test(specifier)) {
+      throw new Error(`Invalid defer specifier format: ${specifier}`)
+    }
+    args.push('--defer', specifier)
   }
   args.push('--linked', '--imports', importsPath, '--out', outputPath, entryPath)
 
@@ -226,6 +237,20 @@ export async function generateBundle (
     if (verbose) log('  Running bare-pack...')
     const targets = config.options?.targets || getDefaultHosts()
 
+    // Missing peers marked optional via peerDependenciesMeta (e.g.
+    // @ledgerhq/ledger-bitcoin for @bitcoinerlab/descriptors) are deferred so
+    // bare-pack doesn't fail statically resolving imports the app never uses.
+    // --no-defer-optional-peers disables this for apps that use those
+    // features and want to find out at build time instead of runtime.
+    let deferredPeers: string[] = []
+    if (options.deferOptionalPeers !== false) {
+      const { installed } = validateDependencies(getPackageList(config), config.projectRoot)
+      deferredPeers = findMissingOptionalPeers(installed, config.projectRoot, { verbose })
+      if (deferredPeers.length > 0) {
+        log(`  Deferring missing optional peer dependencies: ${deferredPeers.join(', ')}`)
+      }
+    }
+
     try {
       runBarePack({
         entryPath,
@@ -233,7 +258,8 @@ export async function generateBundle (
         importsPath,
         targets,
         cwd: config.projectRoot,
-        verbose
+        verbose,
+        defer: deferredPeers
       })
     } catch (barePackError) {
       // Check if we identified a missing module

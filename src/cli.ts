@@ -9,7 +9,7 @@ import fs from 'fs'
 import path from 'path'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR } from './constants'
 import { printBanner } from './utils/banner'
-import type { WdkBundleConfig } from './config/types'
+import { getPackageList } from './config/packages'
 import pkg from '../package.json'
 
 interface GenerateOptions {
@@ -26,6 +26,7 @@ interface GenerateOptions {
   skipLinkAddons?: boolean
   platforms?: string
   esmToCjs?: boolean
+  deferOptionalPeers?: boolean
 }
 
 interface InitOptions {
@@ -48,41 +49,6 @@ const program = new Command()
 
 program.name('wdk-worklet-bundler').description('CLI tool for generating WDK worklet bundles').version(pkg.version)
 
-function getPackageList (config: WdkBundleConfig): string[] {
-  const packages = new Set<string>()
-
-  // Add core (always required implicitly, unless overriden/preloaded logic changes)
-  // For validation, we should probably check it.
-  packages.add('@tetherto/wdk')
-  packages.add('bare-node-runtime')
-
-  if (config.networks) {
-    for (const net of Object.values(config.networks)) {
-      if (net.package) packages.add(net.package)
-    }
-  }
-
-  if (config.protocols != null) {
-    for (const protocol of Object.values(config.protocols)) {
-      if (protocol?.package) packages.add(protocol.package)
-    }
-  }
-
-  if (config.modules != null) {
-    for (const mod of Object.values(config.modules)) {
-      if (mod && mod.package) packages.add(mod.package)
-    }
-  }
-
-  if (config.preloadModules != null) {
-    for (const mod of config.preloadModules) {
-      packages.add(mod)
-    }
-  }
-
-  return Array.from(packages)
-}
-
 program
   .command('generate')
   .description('Generate WDK bundle from configuration')
@@ -99,20 +65,30 @@ program
   .option('--skip-link-addons', 'Skip bare-link addon linking (overrides jsonrpc default)')
   .option('--platforms <platforms>', 'Comma-separated platforms for addons: ios,macos,android')
   .option('--no-esm-to-cjs', 'Skip ESM to CJS conversion (for V8 runtimes like Android)')
+  .option('--no-defer-optional-peers', 'Fail on missing optional peer deps (e.g. Ledger support) instead of deferring them to runtime')
   .action(async (options: GenerateOptions) => {
     const { loadConfig } = await import('./config/loader')
     const {
       validateDependencies,
       installDependencies,
-      checkOptionalPeerDependencies
+      findMissingRequiredPeers,
+      detectPackageManager,
+      generateInstallCommand
     } = await import('./validators/dependencies')
     const { generateBundle, generateSourceFiles } = await import('./bundler')
 
     // Track packages installed by --install for potential cleanup
     const installedPackages: string[] = []
 
-    // Helper for prompts
-    const promptYesNo = async (question: string): Promise<boolean> => {
+    // Helper for prompts. Without a TTY (npm postinstall, CI) readline's
+    // callback never fires and node exits 0 silently, so answer with the
+    // provided default instead of prompting.
+    const promptYesNo = async (question: string, nonInteractiveDefault = false): Promise<boolean> => {
+      if (!process.stdin.isTTY) {
+        console.log(`${question} [Y/n] — non-interactive environment detected, assuming '${nonInteractiveDefault ? 'yes' : 'no'}'`)
+        return nonInteractiveDefault
+      }
+
       const readline = await import('readline')
       const rl = readline.createInterface({
         input: process.stdin,
@@ -120,9 +96,14 @@ program
       })
 
       return await new Promise((resolve) => {
+        let answered = false
         rl.question(`${question} [Y/n] `, (answer) => {
+          answered = true
           rl.close()
           resolve(answer.toLowerCase() !== 'n')
+        })
+        rl.on('close', () => {
+          if (!answered) resolve(nonInteractiveDefault)
         })
       })
     }
@@ -195,23 +176,24 @@ program
           }
         } else if (!options.sourceOnly) {
           console.log('\n❌ Cannot proceed without core dependencies.')
+          console.log('   Install them manually or re-run with --install.\n')
           process.exit(1)
         }
       }
 
       if (validation.valid && !options.sourceOnly) {
-        const missingPeers = checkOptionalPeerDependencies(validation.installed, config.projectRoot, {
+        const missingRequiredPeers = findMissingRequiredPeers(validation.installed, config.projectRoot, {
           verbose: options.verbose
         })
 
-        if (missingPeers.length > 0) {
+        if (missingRequiredPeers.length > 0) {
           console.log('\n🧩 Checking peer dependencies...\n')
-          console.log('  The following optional peer dependencies were found in your dependency tree.')
+          console.log('  The following peer dependencies are missing from your dependency tree.')
           console.log('  They are likely required for the worklet bundle to function correctly.\n')
 
           const packagesToInstall: string[] = []
 
-          for (const peer of missingPeers) {
+          for (const peer of missingRequiredPeers) {
             // Determine install version
             const ranges = [...new Set(peer.sources.map(s => s.range))]
             const isSingle = ranges.length === 1
@@ -239,7 +221,7 @@ program
           let shouldInstallPeers = options.install
 
           if (!shouldInstallPeers) {
-            console.log('\n⚠️  Missing optional peer dependencies.')
+            console.log('\n⚠️  Missing peer dependencies.')
             shouldInstallPeers = await promptYesNo('Would you like to install them now?')
           }
 
@@ -254,6 +236,10 @@ program
             } else {
               console.log(`\n⚠️  Warning: Failed to install some peer dependencies: ${result.error}`)
             }
+          } else {
+            const installCmd = generateInstallCommand(packagesToInstall, detectPackageManager(config.projectRoot))
+            console.log('\n⚠️  Skipping peer dependency installation. If the bundle fails, install them manually:\n')
+            console.log(`   ${installCmd}\n`)
           }
         }
       }
@@ -282,7 +268,8 @@ program
         dryRun: options.dryRun,
         verbose: options.verbose,
         skipTypes: !options.types,
-        skipGeneration: options.skipGeneration
+        skipGeneration: options.skipGeneration,
+        deferOptionalPeers: options.deferOptionalPeers
       })
 
       if (!result.success) {

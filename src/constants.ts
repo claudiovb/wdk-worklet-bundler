@@ -25,7 +25,7 @@ export const BARE_LINK_MODULES = [
   'bare-abort', 'bare-buffer', 'bare-channel', 'bare-crypto', 'bare-dns',
   'bare-fs', 'bare-hrtime', 'bare-inspect', 'bare-logger',
   'bare-module', 'bare-module-lexer', 'bare-os', 'bare-performance',
-  'bare-pipe', 'bare-realm', 'bare-repl', 'bare-signals', 'bare-stdio',
+  'bare-pipe', 'bare-posix', 'bare-realm', 'bare-repl', 'bare-signals', 'bare-stdio',
   'bare-structured-clone', 'bare-subprocess', 'bare-system-logger',
   'bare-tcp', 'bare-thread', 'bare-timers', 'bare-tls', 'bare-tty',
   'bare-type', 'bare-url', 'bare-zlib',

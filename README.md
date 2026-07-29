@@ -146,6 +146,7 @@ wdk-worklet-bundler generate [options]
 - `--skip-generation`: Skip artifact generation and use existing files.
 - `--dry-run`: Print what would happen without writing files.
 - `--no-types`: Skip generating TypeScript definitions.
+- `--no-defer-optional-peers`: Fail at build time if an optional peer dependency (e.g. Ledger support) is missing, instead of deferring it to runtime. See [Optional peer dependencies](#optional-peer-dependencies).
 - `-v, --verbose`: Show verbose output.
 
 ### `init`
@@ -183,6 +184,23 @@ Remove the generated `.wdk` folder.
 ```bash
 wdk-worklet-bundler clean [-y]
 ```
+
+---
+
+## Optional peer dependencies
+
+Some WDK modules have optional peer dependencies for opt-in features (e.g. `ledger-bitcoin`
+for Ledger hardware-wallet support via `@bitcoinerlab/descriptors`). By default, `generate`
+defers resolving missing optional peers to runtime instead of failing the build, so apps
+that don't use the feature aren't forced to install it. This is logged during `generate`:
+
+```
+Deferring missing optional peer dependencies: ledger-bitcoin
+```
+
+If your app uses the feature, install the peer yourself before building — once shipped,
+a mobile bundle can't `npm install` after the fact. Use `--no-defer-optional-peers` to
+fail the build immediately instead of deferring, if you'd rather catch it early.
 
 ---
 
