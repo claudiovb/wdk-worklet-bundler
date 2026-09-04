@@ -19,31 +19,7 @@ export const DEFAULT_IOS_ADDONS_DIR = './ios-addons'
 export const DEFAULT_MACOS_ADDONS_DIR = './mac-addons'
 export const DEFAULT_ANDROID_ADDONS_DIR = './android-addons'
 
-// Native modules to link via bare-link.
-// Only modules that are actually installed will be linked (others are skipped).
-export const BARE_LINK_MODULES = [
-  'bare-abort', 'bare-buffer', 'bare-channel', 'bare-crypto', 'bare-dns',
-  'bare-fs', 'bare-hrtime', 'bare-inspect', 'bare-logger',
-  'bare-module', 'bare-module-lexer', 'bare-os', 'bare-performance',
-  'bare-pipe', 'bare-posix', 'bare-realm', 'bare-repl', 'bare-signals', 'bare-stdio',
-  'bare-structured-clone', 'bare-subprocess', 'bare-system-logger',
-  'bare-tcp', 'bare-thread', 'bare-timers', 'bare-tls', 'bare-tty',
-  'bare-type', 'bare-url', 'bare-zlib',
-  'sodium-native'
-]
-
-// V8-specific addons -- only linked for platforms using V8 (Android, desktop)
-const V8_ONLY_MODULES = ['bare-v8', 'bare-inspector']
-
-// Platforms that use V8 as the JS engine (not JSC)
-const V8_PLATFORMS = new Set(['android'])
-
-export function getModulesForPlatform (platform: string): string[] {
-  if (V8_PLATFORMS.has(platform)) {
-    return [...BARE_LINK_MODULES, ...V8_ONLY_MODULES]
-  }
-  return BARE_LINK_MODULES
-}
+// Native addons to link are discovered from the bundle header (see bundler/linked-addons.ts).
 
 // Host triples for each platform
 export const BARE_LINK_HOSTS: Record<string, string[]> = {

@@ -24,7 +24,7 @@ When `transport: 'jsonrpc'` is set:
 
 - The bundle is output **without a `.js` extension** (BareKit loads it as binary)
 - All ESM modules in the bundle are **automatically converted to CJS** via esbuild (JSC on iOS/macOS has no ES module support)
-- `linkAddons` defaults to `true` — native xcframework files are linked automatically
+- `linkAddons` defaults to `true` — the native addons the bundle requires are discovered from its header and linked automatically (see [Native addon discovery](#native-addon-discovery))
 - `addons.yml` is generated automatically inside `ios-addons/` for BareKit Swift integration
 
 ---
@@ -116,7 +116,7 @@ npx @tetherto/wdk-worklet-bundler
    - Generate the JSON-RPC worklet entry point
    - Run `bare-pack` to create the binary bundle
    - Convert all ESM modules to CJS (required for JSC)
-   - Run `bare-link` to copy native xcframeworks into `ios-addons/`
+   - Run `bare-link` for every native addon recorded in the bundle header, writing xcframeworks into `ios-addons/`
    - Generate `ios-addons/addons.yml` for BareKit Swift integration
 
 3. **Copy** the bundle to your Swift project and add the xcframeworks from `ios-addons/`.
@@ -293,6 +293,20 @@ module.exports = {
   },
 };
 ```
+
+---
+
+## Native addon discovery
+
+`bare-pack --linked` resolves every `require.addon()` call in the module graph to a `linked:<artefact>` URL and records the full set in the bundle header. Each URL is a promise that the host app ships a native library with exactly that name (`bare-fs.4.7.4.xcframework` on Apple, `libbare-fs.4.7.4.so` on Android). After packing, the bundler reads that set back from the bundle and runs `bare-link` once per addon package, so:
+
+- Adding a package with native code to your app — directly, transitively, or via `preloadModules` — links it with no bundler change.
+- Nothing the bundle never requires is linked, which keeps the native output as small as the bundle needs.
+- The `Discovered N native addons from bundle header` line in the build output lists what will be linked (`--verbose` prints every package).
+
+After linking, the bundler cross-checks the produced artefacts against the header. An addon that `bare-link` could not produce (the package ships no prebuilds for the target hosts) is reported as a warning naming the package and hosts — that addon would otherwise fail to load the first time the worklet requires it.
+
+Linking needs the bundle, so `linkAddons` (CLI and programmatic API) runs after `generate` has produced it.
 
 ---
 
