@@ -7,6 +7,7 @@ import { generateModuleModulesCode } from './module-modules'
 import { DEFAULT_ENTRY_FILENAME } from '../constants'
 import { generateMjsAsCjsPatch } from './mjs-as-cjs-patch'
 import { generateHandleLeakCheckCode } from './handle-leak-check'
+import { generateLifecycleCode } from './lifecycle'
 
 export async function generateEntryPoint (config: ResolvedConfig, outputDir: string): Promise<string> {
   const walletModulesCode = generateWalletModulesCode(config)
@@ -21,11 +22,6 @@ export async function generateEntryPoint (config: ResolvedConfig, outputDir: str
 
 require('bare-node-runtime/global');
 ${generateMjsAsCjsPatch(config)}
-const { globalAgent: http1Agent } = require('bare-http1')
-const { globalAgent: httpsAgent } = require('bare-https')
-
-const agents = [http1Agent, httpsAgent]
-
 // Handle unhandled promise rejections and exceptions
 if (typeof Bare !== 'undefined' && Bare.on) {
   Bare.on('unhandledRejection', (error) => {
@@ -33,20 +29,6 @@ if (typeof Bare !== 'undefined' && Bare.on) {
   })
   Bare.on('uncaughtException', (error) => {
     console.error('Uncaught exception in worklet:', error);
-  })
-  Bare.on('suspend', () => {
-    console.log('Bare is suspending')
-    agents.forEach((globalAgent) => {
-      globalAgent.suspend()
-      console.log('Fetching in worklet suspended', globalAgent.suspended)
-    })
-  })
-  Bare.on('resume', () => {
-    console.log('Bare is resuming')
-    agents.forEach((globalAgent) => {
-      globalAgent.resume()
-      console.log('Fetching in worklet resumed', globalAgent.resumed)
-    })
   })
   Bare.on('idle', () => {
     console.log('Bare has idled')
@@ -90,16 +72,7 @@ const context = {
 
 registerRpcHandlers(rpc, context);
 
-// Drive module suspend/resume from the worklet's Bare lifecycle (the same signal
-// the HTTP agents use), so modules release sockets/storage when the app backgrounds.
-if (typeof Bare !== 'undefined' && Bare.on && context.moduleRuntime) {
-  Bare.on('suspend', () => {
-    context.moduleRuntime.suspendAll()
-  })
-  Bare.on('resume', () => {
-    context.moduleRuntime.resumeAll()
-  })
-}
+${generateLifecycleCode()}
 
 logger.info('Worklet started');
 `.trim()
