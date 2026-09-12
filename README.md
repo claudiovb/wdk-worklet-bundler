@@ -304,7 +304,7 @@ module.exports = {
 - Nothing the bundle never requires is linked, which keeps the native output as small as the bundle needs.
 - The `Discovered N native addons from bundle header` line in the build output lists what will be linked (`--verbose` prints every package).
 
-After linking, the bundler cross-checks the produced artefacts against the header. An addon that `bare-link` could not produce (the package ships no prebuilds for the target hosts) is reported as a warning naming the package and hosts — that addon would otherwise fail to load the first time the worklet requires it.
+Each platform's addon output directory (`output.addons.<platform>`) is cleared before linking, so after a build it contains exactly the addons the header requires — point it at a directory dedicated to this output. After linking, the bundler cross-checks the produced artefacts against the header. An addon that `bare-link` could not produce (the package ships no prebuilds for the target hosts) is reported as a warning naming the package and hosts — that addon would otherwise fail to load the first time the worklet requires it.
 
 Linking needs the bundle, so `linkAddons` (CLI and programmatic API) runs after `generate` has produced it.
 

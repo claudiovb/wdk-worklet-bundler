@@ -159,6 +159,40 @@ describe('linkAddons', () => {
     expect(result.success).toBe(true)
   })
 
+  it('should clear stale artefacts from the platform output directory before linking', async () => {
+    // Arrange: an earlier build left a library the header no longer requires
+    const staleLib = path.join(config.resolvedOutput.addons.android, 'arm64-v8a/libbare-old.1.0.0.so')
+    fs.mkdirSync(path.dirname(staleLib), { recursive: true })
+    fs.writeFileSync(staleLib, 'stale')
+    mockLink.mockImplementation(linkYielding({
+      [bareFsDir]: ['libbare-fs.4.7.4.so'],
+      [sodiumDir]: ['libsodium-native.5.1.0.so']
+    }))
+
+    // Act
+    const result = await linkAddons(config, { platforms: ['android'], silent: true })
+
+    // Assert
+    expect(result.success).toBe(true)
+    expect(fs.existsSync(staleLib)).toBe(false)
+    expect(fs.existsSync(config.resolvedOutput.addons.android)).toBe(true)
+  })
+
+  it('should refuse to clear an addon output directory that contains the project root', async () => {
+    // Arrange: a misconfigured output path pointing at the project itself
+    config.resolvedOutput.addons.android = projectRoot
+    mockLink.mockImplementation(linkYielding({}))
+
+    // Act
+    const result = await linkAddons(config, { platforms: ['android'], silent: true })
+
+    // Assert
+    expect(mockLink).not.toHaveBeenCalled()
+    expect(result.success).toBe(false)
+    expect(result.error).toBe(`Refusing to clear addon output directory ${projectRoot}: it contains the project root ${projectRoot}`)
+    expect(fs.existsSync(config.resolvedOutput.bundle)).toBe(true)
+  })
+
   it('should fail without linking when the bundle has not been generated yet', async () => {
     // Arrange
     fs.rmSync(config.resolvedOutput.bundle)

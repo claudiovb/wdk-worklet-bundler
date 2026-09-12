@@ -35,9 +35,15 @@ type BareLink = (modulePath: string, opts: { hosts: string[], out: string }) => 
  * written by `bare-pack --linked`, so the bundle must exist before linking.
  * Generates the artefacts consumers embed in their native projects.
  *
+ * Each platform's addon output directory is cleared before linking, so after
+ * a run it holds exactly the header's addon set — stale artefacts from an
+ * earlier build (and an addons.yml that disagrees with the directory) would
+ * otherwise ship forever. The directory must be dedicated to this output.
+ *
  * Fails, after linking everything it can, when bare-link produced no
  * artefact for an addon the header promises — that addon would crash the
- * worklet at runtime as soon as it is required.
+ * worklet at runtime as soon as it is required. Also fails without touching
+ * the filesystem when an addon output directory contains the project root.
  */
 export async function linkAddons (
   config: ResolvedConfig,
@@ -65,6 +71,10 @@ export async function linkAddons (
       const hosts = BARE_LINK_HOSTS[platform]
 
       log(`  Linking addons for ${platform} → ${outputPath}`)
+      if (fs.existsSync(outputPath)) {
+        clearAddonOutputDir(outputPath, config.projectRoot)
+        log(`  Cleared ${outputPath} (stale artefacts from earlier builds are not kept)`)
+      }
       fs.mkdirSync(outputPath, { recursive: true })
 
       const written = new Set<string>()
@@ -114,4 +124,19 @@ export async function linkAddons (
       error: error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+/**
+ * Remove an addon output directory so a fresh link leaves exactly the
+ * header's addon set behind.
+ *
+ * @throws {Error} If the directory is the project root or contains it — a
+ *   misconfigured `output.addons` path must never wipe the project.
+ */
+function clearAddonOutputDir (outputPath: string, projectRoot: string): void {
+  const relative = path.relative(path.resolve(outputPath), path.resolve(projectRoot))
+  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+    throw new Error(`Refusing to clear addon output directory ${outputPath}: it contains the project root ${projectRoot}`)
+  }
+  fs.rmSync(outputPath, { recursive: true, force: true })
 }
