@@ -386,8 +386,8 @@ describe('Code Generators', () => {
       expect(content).toContain('moduleManagers: typeof moduleManagers !== \'undefined\' ? moduleManagers : {}')
       expect(content).toContain('allowedModuleMethods: {"addressBook":{"methods":["list","add"]}}')
       expect(content).toContain('registerJsonRpcHandlers(BareIPC, context)')
-      expect(content).toContain('context.moduleRuntime.suspendAll()')
-      expect(content).toContain('context.moduleRuntime.resumeAll()')
+      expect(content).toContain("runLifecycle(context.moduleRuntime, 'suspendAll')")
+      expect(content).toContain("runLifecycle(context.moduleRuntime, 'resumeAll')")
     })
 
     it('defaults modules and their allowlist to empty maps', async () => {

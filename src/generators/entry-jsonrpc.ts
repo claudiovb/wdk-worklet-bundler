@@ -6,6 +6,7 @@ import { generateProtocolModulesCode } from './protocol-modules'
 import { generateModuleModulesCode } from './module-modules'
 import { DEFAULT_ENTRY_FILENAME } from '../constants'
 import { generateMjsAsCjsPatch } from './mjs-as-cjs-patch'
+import { generateLifecycleCode } from './lifecycle'
 
 export async function generateJsonRpcEntryPoint (config: ResolvedConfig, outputDir: string): Promise<string> {
   const walletModulesCode = generateWalletModulesCode(config)
@@ -87,15 +88,7 @@ logger.info('BareKit IPC initialized')
 
 registerJsonRpcHandlers(BareIPC, context)
 
-// Drive module suspend/resume from the worklet's Bare lifecycle.
-if (typeof Bare !== 'undefined' && Bare.on && context.moduleRuntime) {
-  Bare.on('suspend', () => {
-    context.moduleRuntime.suspendAll()
-  })
-  Bare.on('resume', () => {
-    context.moduleRuntime.resumeAll()
-  })
-}
+${generateLifecycleCode()}
 
 logger.info('WDK Worklet ready - listening for JSON-RPC messages')
 `.trim()

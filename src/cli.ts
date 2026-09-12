@@ -123,18 +123,28 @@ program
 
       // Apply CLI addon and build overrides
       if (options.linkAddons || options.skipLinkAddons || options.platforms) {
+        const supportedPlatforms = ['ios', 'macos', 'android']
         const parsedPlatforms = options.platforms
           ? options.platforms.split(',')
               .map((p: string) => p.trim())
-              .filter((p: string) => ['ios', 'macos', 'android'].includes(p)) as Array<'ios' | 'macos' | 'android'>
           : undefined
+
+        if (parsedPlatforms) {
+          const invalidPlatforms = parsedPlatforms.filter((p: string) => !supportedPlatforms.includes(p))
+          if (invalidPlatforms.length > 0) {
+            console.error(`\n❌ Invalid platform value(s): ${invalidPlatforms.join(', ')}. Use 'ios', 'macos', or 'android'`)
+            process.exit(1)
+          }
+        }
+
+        const validPlatforms = parsedPlatforms as Array<'ios' | 'macos' | 'android'> | undefined
         config = {
           ...config,
           options: {
             ...config.options,
             ...(options.linkAddons ? { linkAddons: true } : {}),
             ...(options.skipLinkAddons ? { linkAddons: false } : {}),
-            ...(parsedPlatforms ? { platforms: parsedPlatforms } : {})
+            ...(validPlatforms ? { platforms: validPlatforms } : {})
           }
         }
       }
