@@ -28,28 +28,24 @@ export type BundleWrapper = 'cjs' | 'mjs' | 'json'
 
 const WRAPPERS: Array<{ kind: BundleWrapper, prefix: string }> = [
   { kind: 'cjs', prefix: 'module.exports = ' },
-  { kind: 'mjs', prefix: 'export default ' }
+  { kind: 'mjs', prefix: 'export default ' },
+  { kind: 'json', prefix: '' }
 ]
+const PREFIX_WINDOW_BYTES = WRAPPERS.reduce((max, w) => Math.max(max, w.prefix.length), 0) + 1 // +1 for the opening quote of the JSON string literal
 
 /**
  * Strip whichever bare-pack output wrapper is present and JSON.parse the
  * string literal back to the raw bundle bytes (a no-op for a raw `.bundle`).
  */
 export function unwrapBundle (raw: Buffer): { wrapper: BundleWrapper | null, bundle: Buffer } {
-  const head = raw.subarray(0, 32).toString(BUNDLE_TEXT_ENCODING)
+  const head = raw.subarray(0, PREFIX_WINDOW_BYTES).toString(BUNDLE_TEXT_ENCODING)
   for (const { kind, prefix } of WRAPPERS) {
-    if (head.startsWith(prefix)) {
+    if (head.startsWith(prefix + '"')) {
       // Right-hand side is a JSON string literal; JSON.parse tolerates the
       // trailing newline bare-pack appends.
       const bundleStr = JSON.parse(raw.subarray(prefix.length).toString(BUNDLE_TEXT_ENCODING)) as string
       return { wrapper: kind, bundle: Buffer.from(bundleStr, BUNDLE_TEXT_ENCODING) }
     }
-  }
-  // A raw bundle starts with the numeric header length; .bundle.json is the
-  // whole bundle as one JSON string literal, so it starts with a quote.
-  if (head.startsWith('"')) {
-    const bundleStr = JSON.parse(raw.toString(BUNDLE_TEXT_ENCODING)) as string
-    return { wrapper: 'json', bundle: Buffer.from(bundleStr, BUNDLE_TEXT_ENCODING) }
   }
   return { wrapper: null, bundle: raw }
 }
@@ -58,7 +54,6 @@ export function unwrapBundle (raw: Buffer): { wrapper: BundleWrapper | null, bun
 export function rewrapBundle (wrapper: BundleWrapper | null, bundle: Buffer): Buffer {
   if (wrapper === null) return bundle
   const str = JSON.stringify(bundle.toString(BUNDLE_TEXT_ENCODING))
-  if (wrapper === 'json') return Buffer.from(`${str}\n`)
   const prefix = WRAPPERS.find(w => w.kind === wrapper)!.prefix
   return Buffer.from(`${prefix}${str}\n`)
 }
