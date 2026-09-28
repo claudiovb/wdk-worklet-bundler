@@ -1,12 +1,14 @@
 # @tetherto/wdk-worklet-bundler
 
-CLI tool for generating optimized WDK worklet bundles. This tool packages specific blockchain modules (Wallets, Protocols) into a single artifact designed to run in a separate **Bare runtime** thread, isolated from your main application loop.
+CLI tool for generating optimized worklet bundles for WDK (Wallet Development Kit) by Tether. This tool packages specific blockchain modules (Wallets, Protocols) into a single artifact designed to run in a separate **Bare runtime** thread, isolated from your main application loop.
 
 This architecture ensures:
 
 - **Performance:** Heavy cryptographic operations do not block the UI thread.
 - **Compatibility:** Provides a Node.js-like environment (via `bare-node-runtime`) for standard crypto libraries.
 - **Isolation:** Securely encapsulates wallet logic and private keys.
+
+See the [Worklet Bundler documentation](https://docs.wdk.tether.io/tools/worklet-bundler/).
 
 ## Transports
 
