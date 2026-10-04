@@ -11,6 +11,7 @@ import { shouldConvertEsmToCjs } from '../config/loader'
 import { generateEntryPoint } from '../generators/entry'
 import { generateJsonRpcEntryPoint } from '../generators/entry-jsonrpc'
 import { linkAddons } from './addons'
+import { linkPlatformsForHosts } from './linked-addons'
 import { convertBundleEsmToCjs } from './convert-esm-to-cjs'
 import { validateDependencies, findMissingOptionalPeers } from '../validators/dependencies'
 import { getPackageList } from '../config/packages'
@@ -185,8 +186,7 @@ export async function generateBundle (
       log(`  Types: ${config.resolvedOutput.types}`)
     }
     if (shouldLinkAddons) {
-      const platforms = config.options?.platforms ?? ['ios', 'macos', 'android']
-      for (const p of platforms) {
+      for (const p of linkPlatformsForHosts(config.options?.targets ?? getDefaultHosts())) {
         log(`  Addons (${p}): ${config.resolvedOutput.addons[p]}`)
       }
     }
@@ -315,7 +315,16 @@ export async function generateBundle (
       if (verbose) log('  Linking native addons...')
       const addonsResult = await linkAddons(config, { verbose, silent })
       if (!addonsResult.success) {
-        log(`  Warning: bare-link failed: ${addonsResult.error}`)
+        // A missing or unlinkable addon crashes the worklet at its first
+        // require on device, so the build fails here instead.
+        return {
+          success: false,
+          bundlePath: config.resolvedOutput.bundle,
+          typesPath: config.resolvedOutput.types,
+          bundleSize,
+          duration: Date.now() - startTime,
+          error: `Native addon linking failed: ${addonsResult.error ?? 'unknown error'}`
+        }
       }
     }
 

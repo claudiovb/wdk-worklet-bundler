@@ -99,7 +99,9 @@ export const configSchema = {
           properties: {
             ios: { type: 'string', description: 'iOS addons output directory' },
             macos: { type: 'string', description: 'macOS addons output directory' },
-            android: { type: 'string', description: 'Android addons output directory' }
+            android: { type: 'string', description: 'Android addons output directory' },
+            linux: { type: 'string', description: 'Linux addons output directory' },
+            windows: { type: 'string', description: 'Windows addons output directory' }
           }
         },
         addonsYml: { type: 'string', description: 'Path for the generated addons.yml' }
@@ -116,11 +118,6 @@ export const configSchema = {
           description: 'Target platforms for bare-pack'
         },
         linkAddons: { type: 'boolean', description: 'Link native addons via bare-link' },
-        platforms: {
-          type: 'array',
-          items: { type: 'string', enum: ['ios', 'macos', 'android'] },
-          description: 'Platforms to generate addons for'
-        },
         swiftTarget: { type: 'string', description: 'Xcode target name used in addons.yml' },
         convertEsmToCjs: { type: 'boolean', description: 'Convert ESM to CJS in bundle (for engines without ESM support in Bare, e.g. JSC, QuickJS). Defaults to false.' },
         handleLeakCheck: {
@@ -158,4 +155,21 @@ export function validateConfigSchema (config: unknown): asserts config is WdkBun
  */
 export function validateConfig (config: unknown): asserts config is WdkBundleConfig {
   validateConfigSchema(config)
+  rejectRemovedPlatformsOption(config)
+}
+
+/**
+ * `options.platforms` was removed: the platforms addons are linked for are
+ * derived from `options.targets`. A leftover key would otherwise be ignored
+ * silently, so it fails loading with the migration instead.
+ *
+ * @throws {Error} If the config still carries `options.platforms`.
+ */
+function rejectRemovedPlatformsOption (config: WdkBundleConfig): void {
+  if (config.options !== undefined && 'platforms' in config.options) {
+    throw new Error(
+      'Invalid configuration:\n  - /options/platforms: this option was removed. ' +
+      'Addon platforms are derived from options.targets (ios-* → ios, darwin-* → macos, android-* → android); remove the key.'
+    )
+  }
 }

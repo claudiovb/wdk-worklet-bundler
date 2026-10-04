@@ -7,13 +7,12 @@
 import fs from 'fs'
 import path from 'path'
 import type { ResolvedConfig } from '../config/types'
-import { BARE_LINK_HOSTS, DEFAULT_SWIFT_TARGET } from '../constants'
+import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_SWIFT_TARGET } from '../constants'
 import { generateAddonsYml } from '../generators/addons-yml'
 import { readBundle } from './bundle-file'
-import { discoverLinkedAddons, findMissingArtefacts, type LinkedAddon } from './linked-addons'
+import { discoverLinkedAddons, findMissingArtefacts, hostsForPlatform, linkPlatformsForHosts, type LinkPlatform, type LinkedAddon } from './linked-addons'
 
 export interface LinkAddonsOptions {
-  platforms?: Array<'ios' | 'macos' | 'android'>
   verbose?: boolean
   silent?: boolean
 }
@@ -21,7 +20,8 @@ export interface LinkAddonsOptions {
 export interface LinkAddonsResult {
   success: boolean
   duration: number
-  platforms: string[]
+  /** Platforms linked for, derived from the hosts the bundle was packed for. */
+  platforms: LinkPlatform[]
   /** Addons discovered from the bundle header and handed to bare-link. */
   addons: LinkedAddon[]
   error?: string
@@ -30,10 +30,13 @@ export interface LinkAddonsResult {
 type BareLink = (modulePath: string, opts: { hosts: string[], out: string }) => AsyncIterable<string>
 
 /**
- * Link the native addons the packed bundle requires, for each target
- * platform, using bare-link. The addon set is read from the bundle header
- * written by `bare-pack --linked`, so the bundle must exist before linking.
- * Generates the artefacts consumers embed in their native projects.
+ * Link the native addons the packed bundle requires using bare-link. The
+ * addon set is read from the bundle header written by `bare-pack --linked`,
+ * so the bundle must exist before linking. The platforms to link for are
+ * derived from the hosts the bundle was packed for (`options.targets`):
+ * `ios-*` → iOS, `darwin-*` → macOS, `android-*` → Android, each linked with
+ * exactly the hosts of its family. Generates the artefacts consumers embed
+ * in their native projects.
  *
  * Each platform's addon output directory is cleared before linking, so after
  * a run it holds exactly the header's addon set — stale artefacts from an
@@ -43,7 +46,8 @@ type BareLink = (modulePath: string, opts: { hosts: string[], out: string }) => 
  * Fails, after linking everything it can, when bare-link produced no
  * artefact for an addon the header promises — that addon would crash the
  * worklet at runtime as soon as it is required. Also fails without touching
- * the filesystem when an addon output directory contains the project root.
+ * the filesystem when a packed host is of a family the bundler cannot link
+ * for, or when an addon output directory contains the project root.
  */
 export async function linkAddons (
   config: ResolvedConfig,
@@ -53,10 +57,13 @@ export async function linkAddons (
   const { verbose, silent } = options
   const log = (msg: string): void => { if (!silent) console.log(msg) }
 
-  const platforms = options.platforms ?? config.options?.platforms ?? ['ios', 'macos', 'android']
+  const hosts = config.options?.targets ?? DEFAULT_BUNDLE_BUILD_HOSTS
+  let platforms: LinkPlatform[] = []
   let addons: LinkedAddon[] = []
 
   try {
+    platforms = linkPlatformsForHosts(hosts)
+
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const link = require('bare-link') as BareLink
 
@@ -68,7 +75,7 @@ export async function linkAddons (
 
     for (const platform of platforms) {
       const outputPath = config.resolvedOutput.addons[platform]
-      const hosts = BARE_LINK_HOSTS[platform]
+      const platformHosts = hostsForPlatform(platform, hosts)
 
       log(`  Linking addons for ${platform} → ${outputPath}`)
       if (fs.existsSync(outputPath)) {
@@ -82,13 +89,13 @@ export async function linkAddons (
         if (verbose) log(`    Linking ${addon.name}...`)
 
         // bare-link is an async generator yielding the path of each resource it writes
-        for await (const resource of link(addon.dir, { hosts, out: outputPath })) {
+        for await (const resource of link(addon.dir, { hosts: platformHosts, out: outputPath })) {
           written.add(path.basename(resource))
         }
       }
 
       for (const addon of findMissingArtefacts(addons, platform, written)) {
-        gaps.push(`${platform}: ${addon.name}@${addon.version} (no prebuilds for hosts ${hosts.join(', ')})`)
+        gaps.push(`${platform}: ${addon.name}@${addon.version} (no prebuilds for hosts ${platformHosts.join(', ')})`)
       }
 
       log(`  ✓ ${platform} addons → ${outputPath}`)

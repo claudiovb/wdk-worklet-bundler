@@ -71,13 +71,13 @@ describe('discoverLinkedAddons against real bare-pack output', () => {
         name: '@scope/native',
         version: '2.0.0-beta.1',
         dir: path.join(projDir, 'node_modules/@scope/native'),
-        artefacts: ['libscope__native.2.0.0-beta.1.so', 'scope__native.2.0.0-beta.1.framework']
+        artefacts: [{ name: 'libscope__native.2.0.0-beta.1.so', family: 'elf' }, { name: 'scope__native.2.0.0-beta.1.framework', family: 'apple' }]
       },
       {
         name: 'native-dep',
         version: '1.2.3',
         dir: path.join(projDir, 'node_modules/native-dep'),
-        artefacts: ['libnative-dep.1.2.3.so', 'native-dep.1.2.3.framework']
+        artefacts: [{ name: 'libnative-dep.1.2.3.so', family: 'elf' }, { name: 'native-dep.1.2.3.framework', family: 'apple' }]
       }
     ])
   })
@@ -90,7 +90,7 @@ describe('discoverLinkedAddons against real bare-pack output', () => {
     const addons = discoverLinkedAddons(readBundle(bundlePath), projDir)
 
     // Assert
-    expect(addons.map(a => [a.name, a.artefacts])).toEqual([
+    expect(addons.map(a => [a.name, a.artefacts.map(x => x.name)])).toEqual([
       ['@scope/native', ['libscope__native.2.0.0-beta.1.so']],
       ['native-dep', ['libnative-dep.1.2.3.so']]
     ])

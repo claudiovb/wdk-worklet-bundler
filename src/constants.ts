@@ -18,12 +18,8 @@ export const DEFAULT_ADDONS_YML_PATH = './ios-addons/addons.yml'
 export const DEFAULT_IOS_ADDONS_DIR = './ios-addons'
 export const DEFAULT_MACOS_ADDONS_DIR = './mac-addons'
 export const DEFAULT_ANDROID_ADDONS_DIR = './android-addons'
+export const DEFAULT_LINUX_ADDONS_DIR = './linux-addons'
+export const DEFAULT_WINDOWS_ADDONS_DIR = './windows-addons'
 
-// Native addons to link are discovered from the bundle header (see bundler/linked-addons.ts).
-
-// Host triples for each platform
-export const BARE_LINK_HOSTS: Record<string, string[]> = {
-  ios: ['ios-arm64', 'ios-arm64-simulator', 'ios-x64-simulator'],
-  macos: ['darwin-arm64', 'darwin-x64'],
-  android: ['android-arm64', 'android-arm', 'android-ia32', 'android-x64']
-}
+// Native addons to link, and the platforms to link them for, are derived from the bundle
+// header and from options.targets respectively (see bundler/linked-addons.ts).

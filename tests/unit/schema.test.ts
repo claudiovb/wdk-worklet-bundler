@@ -29,6 +29,20 @@ describe('Config Schema Validation', () => {
       expect(() => validateConfig(config)).not.toThrow()
     })
 
+    it('should reject the removed options.platforms key with the migration message', () => {
+      // Arrange
+      const config = {
+        networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
+        options: { targets: ['ios-arm64'], platforms: ['ios'] }
+      }
+
+      // Act & Assert
+      expect(() => validateConfig(config)).toThrow(
+        'Invalid configuration:\n  - /options/platforms: this option was removed. ' +
+        'Addon platforms are derived from options.targets (ios-* → ios, darwin-* → macos, android-* → android); remove the key.'
+      )
+    })
+
     it('should fail if networks is missing', () => {
       const config = {
         options: {}

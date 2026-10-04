@@ -1,7 +1,7 @@
 import path from 'path'
 import { pathToFileURL } from 'url'
 import Bundle from 'bare-bundle'
-import { discoverLinkedAddons } from '../../src/bundler/linked-addons'
+import { discoverLinkedAddons, hostsForPlatform, linkPlatformsForHosts } from '../../src/bundler/linked-addons'
 
 const PROJECT_ROOT = path.resolve('/app')
 
@@ -42,30 +42,30 @@ describe('discoverLinkedAddons', () => {
         name: 'bare-fs',
         version: '4.7.4',
         dir: path.join(PROJECT_ROOT, 'node_modules/bare-fs'),
-        artefacts: ['bare-fs.4.7.4.framework', 'libbare-fs.4.7.4.so']
+        artefacts: [{ name: 'bare-fs.4.7.4.framework', family: 'apple' }, { name: 'libbare-fs.4.7.4.so', family: 'elf' }]
       },
       {
         name: 'bare-tty',
         version: '5.1.2',
         dir: path.join(PROJECT_ROOT, 'node_modules/bare-tty'),
-        artefacts: ['bare-tty.framework', 'libbare-tty.so']
+        artefacts: [{ name: 'bare-tty.framework', family: 'apple' }, { name: 'libbare-tty.so', family: 'elf' }]
       },
       {
         name: 'mac-only',
         version: '0.3.0',
         dir: path.join(PROJECT_ROOT, 'node_modules/mac-only'),
-        artefacts: ['libmac-only.0.3.0.dylib']
+        artefacts: [{ name: 'libmac-only.0.3.0.dylib', family: 'apple' }]
       },
       {
         name: 'win-only',
         version: '1.0.0',
         dir: path.join(PROJECT_ROOT, 'node_modules/win-only'),
-        artefacts: ['win-only-1.0.0.dll']
+        artefacts: [{ name: 'win-only-1.0.0.dll', family: 'windows' }]
       }
     ])
   })
 
-  it('should demangle scoped names and keep prerelease versions intact', () => {
+  it('should match scoped names through the shared mangling and keep prerelease versions intact', () => {
     // Arrange
     const bundle = packBundle([
       { key: '/node_modules/@buildonspark/spark-frost-bare-addon/package.json', name: '@buildonspark/spark-frost-bare-addon', version: '0.0.12-beta.3', addon: true }
@@ -82,10 +82,7 @@ describe('discoverLinkedAddons', () => {
       name: '@buildonspark/spark-frost-bare-addon',
       version: '0.0.12-beta.3',
       dir: path.join(PROJECT_ROOT, 'node_modules/@buildonspark/spark-frost-bare-addon'),
-      artefacts: [
-        'buildonspark__spark-frost-bare-addon.0.0.12-beta.3.framework',
-        'libbuildonspark__spark-frost-bare-addon.0.0.12-beta.3.so'
-      ]
+      artefacts: [{ name: 'buildonspark__spark-frost-bare-addon.0.0.12-beta.3.framework', family: 'apple' }, { name: 'libbuildonspark__spark-frost-bare-addon.0.0.12-beta.3.so', family: 'elf' }]
     }])
   })
 
@@ -106,7 +103,7 @@ describe('discoverLinkedAddons', () => {
       name: 'sodium-native',
       version: '4.3.2',
       dir: path.join(PROJECT_ROOT, 'node_modules/legacy-dep/node_modules/sodium-native'),
-      artefacts: ['libsodium-native.4.3.2.so']
+      artefacts: [{ name: 'libsodium-native.4.3.2.so', family: 'elf' }]
     }])
   })
 
@@ -127,7 +124,7 @@ describe('discoverLinkedAddons', () => {
       name: 'bare-os',
       version: '3.9.3',
       dir: hoistedDir,
-      artefacts: ['libbare-os.3.9.3.so']
+      artefacts: [{ name: 'libbare-os.3.9.3.so', family: 'elf' }]
     }])
   })
 
@@ -149,7 +146,7 @@ describe('discoverLinkedAddons', () => {
       name: 'bare-url',
       version: '2.4.6',
       dir: path.join(PROJECT_ROOT, 'node_modules/bare-url'),
-      artefacts: ['libbare-url.2.4.6.so']
+      artefacts: [{ name: 'libbare-url.2.4.6.so', family: 'elf' }]
     }])
   })
 
@@ -188,5 +185,50 @@ describe('discoverLinkedAddons', () => {
     expect(() => discoverLinkedAddons(bundle, PROJECT_ROOT)).toThrow(
       "Unrecognised linked addon artefact 'linked:bare-fs.wasm'"
     )
+  })
+})
+
+describe('linkPlatformsForHosts', () => {
+  it('should derive the platforms from the packed hosts in link order, without duplicates', () => {
+    // Act
+    const platforms = linkPlatformsForHosts(['android-arm64', 'ios-arm64', 'android-x64', 'ios-arm64-simulator'])
+
+    // Assert
+    expect(platforms).toEqual(['ios', 'android'])
+  })
+
+  it('should map darwin hosts to macOS', () => {
+    // Act
+    const platforms = linkPlatformsForHosts(['darwin-arm64', 'darwin-x64'])
+
+    // Assert
+    expect(platforms).toEqual(['macos'])
+  })
+
+  it('should map linux and win32 hosts to their platforms', () => {
+    // Act
+    const platforms = linkPlatformsForHosts(['win32-x64', 'linux-arm64', 'linux-x64'])
+
+    // Assert
+    expect(platforms).toEqual(['linux', 'windows'])
+  })
+
+  it('should throw for hosts of a family bare-link does not support', () => {
+    // Act & Assert
+    expect(() => linkPlatformsForHosts(['ios-arm64', 'freebsd-x64'])).toThrow(
+      'Cannot link native addons for hosts freebsd-x64: supported host families are ios-*, darwin-*, android-*, linux-*, win32-*'
+    )
+  })
+})
+
+describe('hostsForPlatform', () => {
+  it('should return only the packed hosts of the platform, in their original order', () => {
+    // Arrange
+    const hosts = ['android-x64', 'ios-arm64-simulator', 'darwin-arm64', 'ios-arm64']
+
+    // Act & Assert
+    expect(hostsForPlatform('ios', hosts)).toEqual(['ios-arm64-simulator', 'ios-arm64'])
+    expect(hostsForPlatform('macos', hosts)).toEqual(['darwin-arm64'])
+    expect(hostsForPlatform('android', hosts)).toEqual(['android-x64'])
   })
 })

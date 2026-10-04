@@ -49,13 +49,16 @@ describe('linkAddons', () => {
       configPath: path.join(projectRoot, 'wdk.config.js'),
       projectRoot,
       networks: {},
+      options: { targets: [...IOS_HOSTS, ...ANDROID_HOSTS] },
       resolvedOutput: {
         bundle: bundlePath,
         types: path.join(projectRoot, '.wdk/index.d.ts'),
         addons: {
           ios: path.join(projectRoot, 'ios-addons'),
           macos: path.join(projectRoot, 'mac-addons'),
-          android: path.join(projectRoot, 'android-addons')
+          android: path.join(projectRoot, 'android-addons'),
+          linux: path.join(projectRoot, 'linux-addons'),
+          windows: path.join(projectRoot, 'windows-addons')
         },
         addonsYml: path.join(projectRoot, 'ios-addons/addons.yml')
       }
@@ -75,7 +78,7 @@ describe('linkAddons', () => {
     }))
 
     // Act
-    const result = await linkAddons(config, { platforms: ['ios', 'android'], silent: true })
+    const result = await linkAddons(config, { silent: true })
 
     // Assert
     expect(mockLink.mock.calls).toEqual([
@@ -90,8 +93,8 @@ describe('linkAddons', () => {
       success: true,
       platforms: ['ios', 'android'],
       addons: [
-        { name: 'bare-fs', version: '4.7.4', dir: bareFsDir, artefacts: ['bare-fs.4.7.4.framework', 'libbare-fs.4.7.4.so'] },
-        { name: 'sodium-native', version: '5.1.0', dir: sodiumDir, artefacts: ['libsodium-native.5.1.0.so', 'sodium-native.5.1.0.framework'] }
+        { name: 'bare-fs', version: '4.7.4', dir: bareFsDir, artefacts: [{ name: 'bare-fs.4.7.4.framework', family: 'apple' }, { name: 'libbare-fs.4.7.4.so', family: 'elf' }] },
+        { name: 'sodium-native', version: '5.1.0', dir: sodiumDir, artefacts: [{ name: 'libsodium-native.5.1.0.so', family: 'elf' }, { name: 'sodium-native.5.1.0.framework', family: 'apple' }] }
       ]
     })
     expect(fs.existsSync(config.resolvedOutput.addons.ios)).toBe(true)
@@ -100,13 +103,14 @@ describe('linkAddons', () => {
 
   it('should fail when bare-link writes no artefact for an addon the header promises', async () => {
     // Arrange: sodium-native ships no Android prebuilds in this tree
+    config.options = { targets: ANDROID_HOSTS }
     mockLink.mockImplementation(linkYielding({
       [bareFsDir]: ['libbare-fs.4.7.4.so'],
       [sodiumDir]: []
     }))
 
     // Act
-    const result = await linkAddons(config, { platforms: ['android'], silent: true })
+    const result = await linkAddons(config, { silent: true })
 
     // Assert
     expect(mockLink).toHaveBeenCalledTimes(2)
@@ -121,13 +125,14 @@ describe('linkAddons', () => {
   it('should check macOS output against the framework names promised for iOS', async () => {
     // Arrange: iOS and macOS frameworks share the <name>.<version>.framework basename;
     // sodium-native ships no darwin prebuilds in this tree
+    config.options = { targets: ['darwin-arm64', 'darwin-x64'] }
     mockLink.mockImplementation(linkYielding({
       [bareFsDir]: ['bare-fs.4.7.4.framework'],
       [sodiumDir]: []
     }))
 
     // Act
-    const result = await linkAddons(config, { platforms: ['macos'], silent: true })
+    const result = await linkAddons(config, { silent: true })
 
     // Assert
     expect(mockLink.mock.calls).toEqual([
@@ -141,26 +146,71 @@ describe('linkAddons', () => {
     )
   })
 
-  it('should not report gaps for a platform family the bundle was not packed for', async () => {
-    // Arrange: an Android-only pack carries no .framework promises to check iOS against
-    const bundle = new Bundle()
-    bundle.write('/node_modules/bare-fs/package.json', JSON.stringify({ name: 'bare-fs', version: '4.7.4', addon: true }))
-    bundle.addons = ['linked:libbare-fs.4.7.4.so']
-    fs.writeFileSync(config.resolvedOutput.bundle, bundle.toBuffer())
-    mockLink.mockImplementation(linkYielding({}))
+  it('should link only the platforms derived from the packed hosts, with exactly those hosts', async () => {
+    // Arrange: an iOS-device-only pack; the header still carries Android promises from another build
+    config.options = { targets: ['ios-arm64'] }
+    mockLink.mockImplementation(linkYielding({
+      [bareFsDir]: ['bare-fs.4.7.4.framework'],
+      [sodiumDir]: ['sodium-native.5.1.0.framework']
+    }))
 
     // Act
-    const result = await linkAddons(config, { platforms: ['ios'], silent: true })
+    const result = await linkAddons(config, { silent: true })
 
     // Assert
     expect(mockLink.mock.calls).toEqual([
-      [bareFsDir, { hosts: IOS_HOSTS, out: config.resolvedOutput.addons.ios }]
+      [bareFsDir, { hosts: ['ios-arm64'], out: config.resolvedOutput.addons.ios }],
+      [sodiumDir, { hosts: ['ios-arm64'], out: config.resolvedOutput.addons.ios }]
     ])
     expect(result.success).toBe(true)
+    expect(result.platforms).toEqual(['ios'])
+    expect(fs.existsSync(config.resolvedOutput.addons.android)).toBe(false)
+    expect(fs.existsSync(config.resolvedOutput.addons.macos)).toBe(false)
+  })
+
+  it('should link linux and windows hosts into their own output directories', async () => {
+    // Arrange: a desktop pack; the header promises ELF and DLL artefacts
+    const bundle = new Bundle()
+    bundle.write('/node_modules/bare-fs/package.json', JSON.stringify({ name: 'bare-fs', version: '4.7.4', addon: true }))
+    bundle.addons = ['linked:bare-fs-4.7.4.dll', 'linked:libbare-fs.4.7.4.so']
+    fs.writeFileSync(config.resolvedOutput.bundle, bundle.toBuffer())
+    config.options = { targets: ['linux-x64', 'win32-x64'] }
+    mockLink.mockImplementation(linkYielding({ [bareFsDir]: ['libbare-fs.4.7.4.so', 'bare-fs-4.7.4.dll'] }))
+
+    // Act
+    const result = await linkAddons(config, { silent: true })
+
+    // Assert
+    expect(mockLink.mock.calls).toEqual([
+      [bareFsDir, { hosts: ['linux-x64'], out: config.resolvedOutput.addons.linux }],
+      [bareFsDir, { hosts: ['win32-x64'], out: config.resolvedOutput.addons.windows }]
+    ])
+    expect(result.success).toBe(true)
+    expect(result.platforms).toEqual(['linux', 'windows'])
+    expect(result.addons[0].artefacts).toEqual([
+      { name: 'bare-fs-4.7.4.dll', family: 'windows' },
+      { name: 'libbare-fs.4.7.4.so', family: 'elf' }
+    ])
+  })
+
+  it('should fail without linking for hosts of a family bare-link does not support', async () => {
+    // Arrange
+    config.options = { targets: ['android-arm64', 'freebsd-x64'] }
+    mockLink.mockImplementation(linkYielding({}))
+
+    // Act
+    const result = await linkAddons(config, { silent: true })
+
+    // Assert
+    expect(mockLink).not.toHaveBeenCalled()
+    expect(result.success).toBe(false)
+    expect(result.platforms).toEqual([])
+    expect(result.error).toBe('Cannot link native addons for hosts freebsd-x64: supported host families are ios-*, darwin-*, android-*, linux-*, win32-*')
   })
 
   it('should clear stale artefacts from the platform output directory before linking', async () => {
     // Arrange: an earlier build left a library the header no longer requires
+    config.options = { targets: ANDROID_HOSTS }
     const staleLib = path.join(config.resolvedOutput.addons.android, 'arm64-v8a/libbare-old.1.0.0.so')
     fs.mkdirSync(path.dirname(staleLib), { recursive: true })
     fs.writeFileSync(staleLib, 'stale')
@@ -170,7 +220,7 @@ describe('linkAddons', () => {
     }))
 
     // Act
-    const result = await linkAddons(config, { platforms: ['android'], silent: true })
+    const result = await linkAddons(config, { silent: true })
 
     // Assert
     expect(result.success).toBe(true)
@@ -180,11 +230,12 @@ describe('linkAddons', () => {
 
   it('should refuse to clear an addon output directory that contains the project root', async () => {
     // Arrange: a misconfigured output path pointing at the project itself
+    config.options = { targets: ANDROID_HOSTS }
     config.resolvedOutput.addons.android = projectRoot
     mockLink.mockImplementation(linkYielding({}))
 
     // Act
-    const result = await linkAddons(config, { platforms: ['android'], silent: true })
+    const result = await linkAddons(config, { silent: true })
 
     // Assert
     expect(mockLink).not.toHaveBeenCalled()
@@ -195,10 +246,11 @@ describe('linkAddons', () => {
 
   it('should fail without linking when the bundle has not been generated yet', async () => {
     // Arrange
+    config.options = { targets: ANDROID_HOSTS }
     fs.rmSync(config.resolvedOutput.bundle)
 
     // Act
-    const result = await linkAddons(config, { platforms: ['android'], silent: true })
+    const result = await linkAddons(config, { silent: true })
 
     // Assert
     expect(mockLink).not.toHaveBeenCalled()

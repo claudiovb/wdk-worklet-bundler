@@ -10,6 +10,7 @@ import path from 'path'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR } from './constants'
 import { printBanner } from './utils/banner'
 import { getPackageList } from './config/packages'
+import { linkPlatformsForHosts } from './bundler/linked-addons'
 import pkg from '../package.json'
 
 interface GenerateOptions {
@@ -24,7 +25,6 @@ interface GenerateOptions {
   transport?: string
   linkAddons?: boolean
   skipLinkAddons?: boolean
-  platforms?: string
   deferOptionalPeers?: boolean
 }
 
@@ -62,7 +62,6 @@ program
   .option('--transport <transport>', 'Transport type: hrpc (default) or jsonrpc')
   .option('--link-addons', 'Link native addons via bare-link (default: true for jsonrpc)')
   .option('--skip-link-addons', 'Skip bare-link addon linking (overrides jsonrpc default)')
-  .option('--platforms <platforms>', 'Comma-separated platforms for addons: ios,macos,android')
   .option('--no-defer-optional-peers', 'Fail on missing optional peer deps (e.g. Ledger support) instead of deferring them to runtime')
   .action(async (options: GenerateOptions) => {
     const { loadConfig } = await import('./config/loader')
@@ -121,30 +120,14 @@ program
         config = { ...config, transport: options.transport as 'hrpc' | 'jsonrpc' }
       }
 
-      // Apply CLI addon and build overrides
-      if (options.linkAddons || options.skipLinkAddons || options.platforms) {
-        const supportedPlatforms = ['ios', 'macos', 'android']
-        const parsedPlatforms = options.platforms
-          ? options.platforms.split(',')
-              .map((p: string) => p.trim())
-          : undefined
-
-        if (parsedPlatforms) {
-          const invalidPlatforms = parsedPlatforms.filter((p: string) => !supportedPlatforms.includes(p))
-          if (invalidPlatforms.length > 0) {
-            console.error(`\n❌ Invalid platform value(s): ${invalidPlatforms.join(', ')}. Use 'ios', 'macos', or 'android'`)
-            process.exit(1)
-          }
-        }
-
-        const validPlatforms = parsedPlatforms as Array<'ios' | 'macos' | 'android'> | undefined
+      // Apply CLI addon overrides
+      if (options.linkAddons || options.skipLinkAddons) {
         config = {
           ...config,
           options: {
             ...config.options,
             ...(options.linkAddons ? { linkAddons: true } : {}),
-            ...(options.skipLinkAddons ? { linkAddons: false } : {}),
-            ...(validPlatforms ? { platforms: validPlatforms } : {})
+            ...(options.skipLinkAddons ? { linkAddons: false } : {})
           }
         }
       }
@@ -311,7 +294,7 @@ program
       }
       const shouldLinkAddons = config.options?.linkAddons ?? (config.transport === 'jsonrpc')
       if (shouldLinkAddons) {
-        const platforms = config.options?.platforms ?? ['ios', 'macos', 'android']
+        const platforms = linkPlatformsForHosts(config.options?.targets ?? DEFAULT_BUNDLE_BUILD_HOSTS)
         for (const p of platforms) {
           console.log(`  Addons (${p}): ${config.resolvedOutput.addons[p]}`)
         }
