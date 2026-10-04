@@ -1,12 +1,14 @@
 # @tetherto/wdk-worklet-bundler
 
-CLI tool for generating optimized WDK worklet bundles. This tool packages specific blockchain modules (Wallets, Protocols) into a single artifact designed to run in a separate **Bare runtime** thread, isolated from your main application loop.
+CLI tool for generating optimized worklet bundles for WDK (Wallet Development Kit) by Tether. This tool packages specific blockchain modules (Wallets, Protocols) into a single artifact designed to run in a separate **Bare runtime** thread, isolated from your main application loop.
 
 This architecture ensures:
 
 - **Performance:** Heavy cryptographic operations do not block the UI thread.
 - **Compatibility:** Provides a Node.js-like environment (via `bare-node-runtime`) for standard crypto libraries.
 - **Isolation:** Securely encapsulates wallet logic and private keys.
+
+See the [Worklet Bundler documentation](https://docs.wdk.tether.io/tools/worklet-bundler/).
 
 ## Transports
 
@@ -23,8 +25,8 @@ Uses JSON-RPC 2.0 with length-prefixed framing over BareKit IPC. Required for Sw
 When `transport: 'jsonrpc'` is set:
 
 - The bundle is output **without a `.js` extension** (BareKit loads it as binary)
-- All ESM modules in the bundle are **automatically converted to CJS** via esbuild (JSC on iOS/macOS has no ES module support)
-- `linkAddons` defaults to `true` — the native addons the bundle requires are discovered from its header and linked automatically (see [Native addon discovery](#native-addon-discovery))
+- Set `options.convertEsmToCjs: true` to convert ESM modules to CJS via esbuild. This is **required for iOS/macOS (JavaScriptCore) and QuickJS targets** and optional only for V8. The option defaults to `false` for both transports.
+- `linkAddons` defaults to `true` — the native addons the bundle requires are discovered from its header and linked automatically for every platform in `options.targets` (see [Native addon discovery](#native-addon-discovery))
 - `addons.yml` is generated automatically inside `ios-addons/` for BareKit Swift integration
 
 ---
@@ -98,7 +100,8 @@ npx @tetherto/wdk-worklet-bundler
        bitcoin: { package: "@tetherto/wdk-wallet-btc" },
      },
      options: {
-       platforms: ["ios"], // or ['ios', 'macos', 'android']
+       targets: ["ios-arm64", "ios-arm64-simulator", "ios-x64-simulator"], // addons are linked for the platforms these hosts belong to
+       convertEsmToCjs: true, // required for JSC and QuickJS; optional for V8
      },
      output: {
        bundle: "./.wdk-bundle/wdk-worklet.mobile.bundle",
@@ -115,7 +118,7 @@ npx @tetherto/wdk-worklet-bundler
    This will:
    - Generate the JSON-RPC worklet entry point
    - Run `bare-pack` to create the binary bundle
-   - Convert all ESM modules to CJS (required for JSC)
+   - Convert all ESM modules to CJS using `convertEsmToCjs: true` (required for JSC and QuickJS)
    - Run `bare-link` for every native addon recorded in the bundle header, writing xcframeworks into `ios-addons/`
    - Generate `ios-addons/addons.yml` for BareKit Swift integration
 
@@ -140,7 +143,6 @@ wdk-worklet-bundler generate [options]
 - `--transport <transport>`: Override transport (`hrpc` or `jsonrpc`).
 - `--link-addons`: Force linking native addons even for HRPC.
 - `--skip-link-addons`: Skip native addon linking even for JSON-RPC.
-- `--platforms <platforms>`: Comma-separated platforms to link (`ios,macos,android`).
 - `--keep-artifacts`: Keep the intermediate `.wdk/` folder (useful for debugging).
 - `--source-only`: Generate entry files but skip `bare-pack`.
 - `--skip-generation`: Skip artifact generation and use existing files.
@@ -264,11 +266,14 @@ module.exports = {
     // TypeScript declarations (default: ./.wdk/index.d.ts)
     types: "./.wdk/index.d.ts",
 
-    // Native addon output directories (jsonrpc only)
+    // Native addon output directories, one per platform in options.targets.
+    // Each is cleared and rewritten on every build — keep them dedicated.
     addons: {
       ios: "./ios-addons", // default
       macos: "./mac-addons", // default
       android: "./android-addons", // default
+      linux: "./linux-addons", // default
+      windows: "./windows-addons", // default
     },
 
     // addons.yml output path (default: ./ios-addons/addons.yml)
@@ -277,19 +282,34 @@ module.exports = {
 
   // ── Build options ─────────────────────────────────────────
   options: {
-    // bare-pack host targets (default: all iOS + Android targets)
+    // Minify the generated bundle (default: false).
+    // Accepted by the config schema but not applied by the bundler yet.
+    minify: true,
+
+    // Generate source maps (default: false).
+    // Accepted by the config schema but not applied by the bundler yet.
+    sourceMaps: true,
+
+    // bare-pack host targets (default: all iOS + Android targets).
+    // Also decides which platforms get native addons: ios-* → ios,
+    // darwin-* → macos, android-* → android, linux-* → linux, win32-* → windows.
     targets: ["ios-arm64", "ios-arm64-simulator", "ios-x64-simulator"],
 
-    // Link native xcframeworks after bundling.
+    // Link native addons after bundling, for every platform in `targets`.
     // Defaults to true when transport is 'jsonrpc', false for 'hrpc'.
     linkAddons: true,
-
-    // Platforms to link addons for (default: all configured platforms)
-    platforms: ["ios"],
 
     // Swift target name used in addons.yml.
     // Defaults to 'app'. Set this to your Xcode target name if it differs.
     swiftTarget: "MyApp",
+
+    // Convert ESM to CJS (default: false for both transports).
+    // Required for iOS/macOS (JSC) and QuickJS; optional only for V8.
+    convertEsmToCjs: true,
+
+    // Enable pear-wrk-wdk's handle-leak diagnostic. Use a positive number to
+    // override its tick interval; omit to disable (default: disabled).
+    handleLeakCheck: true,
   },
 };
 ```
@@ -303,8 +323,9 @@ module.exports = {
 - Adding a package with native code to your app — directly, transitively, or via `preloadModules` — links it with no bundler change.
 - Nothing the bundle never requires is linked, which keeps the native output as small as the bundle needs.
 - The `Discovered N native addons from bundle header` line in the build output lists what will be linked (`--verbose` prints every package).
+- The platforms to link for come from `options.targets`: `ios-*` hosts produce xcframeworks in `output.addons.ios`, `darwin-*` frameworks in `output.addons.macos`, `android-*` shared objects in `output.addons.android`, and `linux-*` / `win32-*` their libraries in `output.addons.linux` / `output.addons.windows`. Each platform is linked with exactly the hosts you packed for it; there is no separate platform list to keep in sync.
 
-Each platform's addon output directory (`output.addons.<platform>`) is cleared before linking, so after a build it contains exactly the addons the header requires — point it at a directory dedicated to this output. After linking, the bundler cross-checks the produced artefacts against the header. An addon that `bare-link` could not produce (the package ships no prebuilds for the target hosts) is reported as a warning naming the package and hosts — that addon would otherwise fail to load the first time the worklet requires it.
+Each platform's addon output directory (`output.addons.<platform>`) is cleared before linking, so after a build it contains exactly the addons the header requires — point it at a directory dedicated to this output. After linking, the bundler cross-checks the produced artefacts against the header. An addon that `bare-link` could not produce (the package ships no prebuilds for the target hosts) fails the build, naming the package and hosts — that addon would otherwise crash the worklet the first time it is required on device.
 
 Linking needs the bundle, so `linkAddons` (CLI and programmatic API) runs after `generate` has produced it.
 
@@ -375,7 +396,7 @@ Run `wdk-worklet-bundler generate --install`. This installs all packages defined
 This happens when ESM modules are loaded eagerly at bundle startup. The bundler handles this in two ways:
 
 1. Wallet modules are lazy-loaded via a Proxy — they are only `require()`'d when first accessed, not at startup
-2. The ESM→CJS conversion step (run automatically for `jsonrpc`) rewrites all ESM syntax to CJS so JSC can handle it
+2. The ESM→CJS conversion step (enabled with `options.convertEsmToCjs: true`, required for JSC and QuickJS) rewrites all ESM syntax to CJS so the engine can load it
 
 If you see this error, make sure you're using a recent version of the bundler that includes both fixes.
 
