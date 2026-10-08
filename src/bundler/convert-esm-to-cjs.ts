@@ -59,57 +59,7 @@
 import fs from 'fs'
 import { transformSync } from 'esbuild'
 import Bundle from 'bare-bundle'
-
-/**
- * Text encoding used when bare-pack stringifies the bundle into its wrapped
- * output formats (`module.exports = "..."` etc). bare-pack supports other
- * encodings via `--encoding` (e.g. base64), but defaults to utf8 and this
- * package never passes the flag — a non-utf8 wrapped bundle is not supported
- * here and would fail parseHeader/Bundle.from after unwrapping.
- */
-const BUNDLE_TEXT_ENCODING: BufferEncoding = 'utf8'
-
-/**
- * bare-pack writes the raw bundle verbatim only for the `.bundle` output.
- * For `.bundle.js`/`.bundle.cjs` (the hrpc default, imported by Metro) it
- * wraps it as `module.exports = <json-string>\n`, for `.bundle.mjs` as
- * `export default <json-string>\n`, and for `.bundle.json` as the bare
- * `<json-string>\n`. Conversion rewrites the bundle bytes, so the wrapper is
- * stripped first and restored afterwards so the artifact stays importable.
- */
-type BundleWrapper = 'cjs' | 'mjs' | 'json'
-
-const WRAPPERS: Array<{ kind: BundleWrapper, prefix: string }> = [
-  { kind: 'cjs', prefix: 'module.exports = ' },
-  { kind: 'mjs', prefix: 'export default ' }
-]
-
-function unwrapBundle (raw: Buffer): { wrapper: BundleWrapper | null, bundle: Buffer } {
-  const head = raw.subarray(0, 32).toString(BUNDLE_TEXT_ENCODING)
-  for (const { kind, prefix } of WRAPPERS) {
-    if (head.startsWith(prefix)) {
-      // Right-hand side is a JSON string literal; JSON.parse tolerates the
-      // trailing newline bare-pack appends.
-      const bundleStr = JSON.parse(raw.subarray(prefix.length).toString(BUNDLE_TEXT_ENCODING)) as string
-      return { wrapper: kind, bundle: Buffer.from(bundleStr, BUNDLE_TEXT_ENCODING) }
-    }
-  }
-  // A raw bundle starts with the numeric header length; .bundle.json is the
-  // whole bundle as one JSON string literal, so it starts with a quote.
-  if (head.startsWith('"')) {
-    const bundleStr = JSON.parse(raw.toString(BUNDLE_TEXT_ENCODING)) as string
-    return { wrapper: 'json', bundle: Buffer.from(bundleStr, BUNDLE_TEXT_ENCODING) }
-  }
-  return { wrapper: null, bundle: raw }
-}
-
-function rewrapBundle (wrapper: BundleWrapper | null, bundle: Buffer): Buffer {
-  if (wrapper === null) return bundle
-  const str = JSON.stringify(bundle.toString(BUNDLE_TEXT_ENCODING))
-  if (wrapper === 'json') return Buffer.from(`${str}\n`)
-  const prefix = WRAPPERS.find(w => w.kind === wrapper)!.prefix
-  return Buffer.from(`${prefix}${str}\n`)
-}
+import { BUNDLE_TEXT_ENCODING, rewrapBundle, unwrapBundle } from './bundle-file'
 
 /** Buffer-typed views over the bare-bundle API (its .d.ts uses bare types). */
 function readFile (bundle: Bundle, key: string): Buffer {

@@ -2,48 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { convertBundleEsmToCjs, validateBundle } from '../../src/bundler/convert-esm-to-cjs'
-
-/** Build a bare-pack style bundle: <N>\n<JSON>\n<DATA> */
-function createBundle (files: Record<string, string>): Buffer {
-  const buffers: Buffer[] = []
-  const fileMap: Record<string, { offset: number, length: number }> = {}
-  let offset = 0
-
-  for (const [filePath, content] of Object.entries(files)) {
-    const buf = Buffer.from(content)
-    fileMap[filePath] = { offset, length: buf.length }
-    offset += buf.length
-    buffers.push(buf)
-  }
-
-  const json = JSON.stringify({ files: fileMap })
-  const N = json.length + 2
-  return Buffer.concat([
-    Buffer.from(N.toString() + '\n'),
-    Buffer.from(json),
-    Buffer.from('\n'),
-    ...buffers
-  ])
-}
-
-/** Parse a bundle back into per-file contents (mirrors the bundle format) */
-function readBundleFiles (bundlePath: string): Record<string, string> {
-  const buf = fs.readFileSync(bundlePath)
-  const nl = buf.indexOf(0x0a)
-  const N = parseInt(buf.subarray(0, nl).toString(), 10)
-  const headerStart = nl + 1
-  const jsonEnd = headerStart + N - 2
-  const header = JSON.parse(buf.subarray(headerStart, jsonEnd).toString()) as {
-    files: Record<string, { offset: number, length: number }>
-  }
-  const dataStart = jsonEnd + 1
-
-  const out: Record<string, string> = {}
-  for (const [filePath, info] of Object.entries(header.files)) {
-    out[filePath] = buf.subarray(dataStart + info.offset, dataStart + info.offset + info.length).toString()
-  }
-  return out
-}
+import { unwrapBundle } from '../../src/bundler/bundle-file'
+import { createBundle, readBundleFiles, wrapBundle, parseBundleFiles } from '../helpers/bundle'
 
 describe('convertBundleEsmToCjs', () => {
   let tempDir: string
@@ -125,64 +85,25 @@ describe('convertBundleEsmToCjs', () => {
     expect(() => convertBundleEsmToCjs(bundlePath, { minify: false })).toThrow(/conversion failed/)
   })
 
-  describe('bare-pack JS-wrapped bundles (.bundle.js / .bundle.mjs)', () => {
-    // bare-pack wraps the raw bundle for JS-importable outputs; the converter
-    // must reverse the wrapper, convert, and restore it byte-for-byte.
-    const wrapCjs = (raw: Buffer): Buffer =>
-      Buffer.from(`module.exports = ${JSON.stringify(raw.toString('utf8'))}\n`)
-    const wrapMjs = (raw: Buffer): Buffer =>
-      Buffer.from(`export default ${JSON.stringify(raw.toString('utf8'))}\n`)
+  it('preserves the bundle wrapper if present', () => {
+    fs.writeFileSync(
+      bundlePath,
+      wrapBundle('cjs', createBundle({
+          '/node_modules/pkg/index.js':
+            "import dep from 'dep'\nexport const x = dep"
+        })
+      )
+    )
+    convertBundleEsmToCjs(bundlePath, { minify: false })
 
-    const readWrappedFiles = (): Record<string, string> => {
-      const wrapped = fs.readFileSync(bundlePath, 'utf8')
-      const prefix = wrapped.startsWith('module.exports = ') ? 'module.exports = ' : 'export default '
-      const raw = JSON.parse(wrapped.slice(prefix.length)) as string
-      const rawPath = path.join(tempDir, 'unwrapped.bundle')
-      fs.writeFileSync(rawPath, raw)
-      return readBundleFiles(rawPath)
-    }
-
-    it('converts a module.exports-wrapped bundle and keeps the wrapper', () => {
-      fs.writeFileSync(bundlePath, wrapCjs(createBundle({
-        '/node_modules/pkg/index.js': "import dep from 'dep'\nexport const x = dep"
-      })))
-
-      convertBundleEsmToCjs(bundlePath, { minify: false })
-
-      const wrapped = fs.readFileSync(bundlePath, 'utf8')
-      expect(wrapped.startsWith('module.exports = ')).toBe(true)
-      expect(wrapped.endsWith('\n')).toBe(true)
-      const code = readWrappedFiles()['/node_modules/pkg/index.js']
-      expect(code).toContain('require("dep")')
-      expect(code).not.toMatch(/^import /m)
-    })
-
-    it('converts an export default-wrapped bundle and keeps the wrapper', () => {
-      fs.writeFileSync(bundlePath, wrapMjs(createBundle({
-        '/node_modules/pkg/ws.mjs': "export async function connect () { return (await import('ws')).default }"
-      })))
-
-      convertBundleEsmToCjs(bundlePath, { minify: false })
-
-      const wrapped = fs.readFileSync(bundlePath, 'utf8')
-      expect(wrapped.startsWith('export default ')).toBe(true)
-      const code = readWrappedFiles()['/node_modules/pkg/ws.mjs']
-      expect(code).not.toContain('import(')
-      expect(code).toContain('require("ws")')
-    })
-
-    it('re-wrapped bundle round-trips back to a valid raw bundle', () => {
-      fs.writeFileSync(bundlePath, wrapCjs(createBundle({
-        '/a.js': "import x from 'x'\nexport const a = x",
-        '/b.json': JSON.stringify({ nested: { works: true } })
-      })))
-
-      convertBundleEsmToCjs(bundlePath, { minify: false })
-
-      const files = readWrappedFiles()
-      expect(files['/a.js']).toContain('require("x")')
-      expect(JSON.parse(files['/b.json'])).toEqual({ nested: { works: true } })
-    })
+    const wrapped = fs.readFileSync(bundlePath, 'utf8')
+    expect(wrapped.startsWith('module.exports = ')).toBe(true)
+    expect(wrapped.endsWith('\n')).toBe(true)
+    const code = parseBundleFiles(unwrapBundle(Buffer.from(wrapped)).bundle)[
+      '/node_modules/pkg/index.js'
+    ]
+    expect(code).toContain('require("dep")')
+    expect(code).not.toMatch(/^import /m)
   })
 
   describe('validateBundle', () => {

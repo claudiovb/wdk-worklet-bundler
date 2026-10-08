@@ -289,7 +289,7 @@ module.exports = {
       expect(output).toContain('.wdk/wdk-worklet.generated.js')
     })
 
-    it('should reject unknown platform values before checking dependencies', () => {
+    it('should derive the addon platforms from the configured targets', () => {
       const config = `
 module.exports = {
   networks: {
@@ -297,41 +297,8 @@ module.exports = {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
     },
   },
-};
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-
-      const output = runCli('generate --platforms windwos')
-
-      expect(output).toContain('Invalid platform value(s): windwos')
-      expect(output).not.toContain('Checking core dependencies')
-    })
-
-    it('should reject unknown values in a mixed platform list', () => {
-      const config = `
-module.exports = {
-  networks: {
-    ethereum: {
-      package: '@tetherto/wdk-wallet-evm-erc-4337',
-    },
-  },
-};
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-
-      const output = runCli('generate --platforms ios,windwos')
-
-      expect(output).toContain('Invalid platform value(s): windwos')
-      expect(output).not.toContain('Checking core dependencies')
-    })
-
-    it('should accept supported platform values', () => {
-      const config = `
-module.exports = {
-  networks: {
-    ethereum: {
-      package: '@tetherto/wdk-wallet-evm-erc-4337',
-    },
+  options: {
+    targets: ['ios-arm64', 'android-arm64'],
   },
 };
 `
@@ -341,11 +308,50 @@ module.exports = {
       mockPackage('bare-node-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
 
-      const output = runCli('generate --dry-run --link-addons --platforms ios,android')
+      const output = runCli('generate --dry-run --link-addons')
 
       expect(output).toContain('Addons (ios)')
       expect(output).toContain('Addons (android)')
       expect(output).not.toContain('Addons (macos)')
+    })
+
+    it('should reject the removed --platforms flag', () => {
+      const config = `
+module.exports = {
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+
+      const output = runCli('generate --platforms ios')
+
+      expect(output).toContain("unknown option '--platforms'")
+      expect(output).not.toContain('Checking core dependencies')
+    })
+
+    it('should reject a config that still carries options.platforms', () => {
+      const config = `
+module.exports = {
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+  options: {
+    platforms: ['ios'],
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+
+      const output = runCli('generate --dry-run')
+
+      expect(output).toContain('/options/platforms: this option was removed')
+      expect(output).not.toContain('Checking core dependencies')
     })
   })
 

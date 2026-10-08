@@ -7,7 +7,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import type { WdkBundleConfig, ResolvedConfig } from './types'
 import { validateConfig } from './schema'
-import { DEFAULT_BUNDLE_PATH, DEFAULT_BUNDLE_PATH_JSONRPC, DEFAULT_TYPES_PATH, DEFAULT_IOS_ADDONS_DIR, DEFAULT_MACOS_ADDONS_DIR, DEFAULT_ANDROID_ADDONS_DIR, DEFAULT_ADDONS_YML_PATH } from '../constants'
+import { DEFAULT_BUNDLE_PATH, DEFAULT_BUNDLE_PATH_JSONRPC, DEFAULT_TYPES_PATH, DEFAULT_IOS_ADDONS_DIR, DEFAULT_MACOS_ADDONS_DIR, DEFAULT_ANDROID_ADDONS_DIR, DEFAULT_LINUX_ADDONS_DIR, DEFAULT_WINDOWS_ADDONS_DIR, DEFAULT_ADDONS_YML_PATH } from '../constants'
 
 const CONFIG_FILES = [
   'wdk.config.js',
@@ -108,7 +108,9 @@ export async function loadConfig (configPath?: string): Promise<ResolvedConfig> 
     addons: {
       ios: path.resolve(projectRoot, config.output?.addons?.ios || DEFAULT_IOS_ADDONS_DIR),
       macos: path.resolve(projectRoot, config.output?.addons?.macos || DEFAULT_MACOS_ADDONS_DIR),
-      android: path.resolve(projectRoot, config.output?.addons?.android || DEFAULT_ANDROID_ADDONS_DIR)
+      android: path.resolve(projectRoot, config.output?.addons?.android || DEFAULT_ANDROID_ADDONS_DIR),
+      linux: path.resolve(projectRoot, config.output?.addons?.linux || DEFAULT_LINUX_ADDONS_DIR),
+      windows: path.resolve(projectRoot, config.output?.addons?.windows || DEFAULT_WINDOWS_ADDONS_DIR)
     },
     addonsYml: path.resolve(projectRoot, config.output?.addonsYml || DEFAULT_ADDONS_YML_PATH)
   }

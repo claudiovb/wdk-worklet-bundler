@@ -15,7 +15,6 @@ describe('README configuration reference', () => {
       'sourceMaps',
       'targets',
       'linkAddons',
-      'platforms',
       'swiftTarget',
       'convertEsmToCjs',
       'handleLeakCheck'

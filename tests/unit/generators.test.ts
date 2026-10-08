@@ -26,7 +26,9 @@ describe('Code Generators', () => {
       addons: {
         ios: '/test/ios/addons',
         macos: '/test/macos/addons',
-        android: '/test/android/addons'
+        android: '/test/android/addons',
+        linux: '/test/linux/addons',
+        windows: '/test/windows/addons'
       },
       addonsYml: '/test/addons.yml'
     },

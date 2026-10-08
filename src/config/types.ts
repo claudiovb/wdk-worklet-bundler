@@ -93,6 +93,8 @@ export interface WdkBundleConfig {
       ios?: string
       macos?: string
       android?: string
+      linux?: string
+      windows?: string
     }
     /** Path for the generated addons.yml (BareKit Swift dependency list) */
     addonsYml?: string
@@ -105,8 +107,6 @@ export interface WdkBundleConfig {
     targets?: string[]
     /** Link native addons via bare-link. Defaults to true when transport is 'jsonrpc'. */
     linkAddons?: boolean
-    /** Platforms to generate addons for. Defaults to all three when linkAddons is active. */
-    platforms?: Array<'ios' | 'macos' | 'android'>
     /** Xcode target name used in the generated addons.yml. Defaults to 'app'. */
     swiftTarget?: string
     /** Convert ESM to CJS in the bundle. Required for engines whose Bare port
@@ -139,6 +139,8 @@ export interface ResolvedConfig extends WdkBundleConfig {
       ios: string
       macos: string
       android: string
+      linux: string
+      windows: string
     }
     addonsYml: string
   }

@@ -45,7 +45,7 @@ describe.each([
       resolvedOutput: {
         bundle: path.join(dir, 'bundle.js'),
         types: path.join(dir, 'types.d.ts'),
-        addons: { ios: '', macos: '', android: '' },
+        addons: { ios: '', macos: '', android: '', linux: '', windows: '' },
         addonsYml: path.join(dir, 'addons.yml')
       }
     }

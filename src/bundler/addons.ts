@@ -1,16 +1,18 @@
 /**
  * Native addons linker
- * Uses bare-link to generate platform-specific native addon files
+ * Uses bare-link to generate platform-specific native addon files for the
+ * addons the packed bundle will load (see linked-addons.ts).
  */
 
 import fs from 'fs'
 import path from 'path'
 import type { ResolvedConfig } from '../config/types'
-import { getModulesForPlatform, BARE_LINK_HOSTS, DEFAULT_SWIFT_TARGET } from '../constants'
+import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_SWIFT_TARGET } from '../constants'
 import { generateAddonsYml } from '../generators/addons-yml'
+import { readBundle } from './bundle-file'
+import { discoverLinkedAddons, findMissingArtefacts, hostsForPlatform, linkPlatformsForHosts, type LinkPlatform, type LinkedAddon } from './linked-addons'
 
 export interface LinkAddonsOptions {
-  platforms?: Array<'ios' | 'macos' | 'android'>
   verbose?: boolean
   silent?: boolean
 }
@@ -18,13 +20,34 @@ export interface LinkAddonsOptions {
 export interface LinkAddonsResult {
   success: boolean
   duration: number
-  platforms: string[]
+  /** Platforms linked for, derived from the hosts the bundle was packed for. */
+  platforms: LinkPlatform[]
+  /** Addons discovered from the bundle header and handed to bare-link. */
+  addons: LinkedAddon[]
   error?: string
 }
 
+type BareLink = (modulePath: string, opts: { hosts: string[], out: string }) => AsyncIterable<string>
+
 /**
- * Link native bare modules for each target platform using bare-link.
- * Generates addon files that consumers need to embed in their native projects.
+ * Link the native addons the packed bundle requires using bare-link. The
+ * addon set is read from the bundle header written by `bare-pack --linked`,
+ * so the bundle must exist before linking. The platforms to link for are
+ * derived from the hosts the bundle was packed for (`options.targets`):
+ * `ios-*` → iOS, `darwin-*` → macOS, `android-*` → Android, each linked with
+ * exactly the hosts of its family. Generates the artefacts consumers embed
+ * in their native projects.
+ *
+ * Each platform's addon output directory is cleared before linking, so after
+ * a run it holds exactly the header's addon set — stale artefacts from an
+ * earlier build (and an addons.yml that disagrees with the directory) would
+ * otherwise ship forever. The directory must be dedicated to this output.
+ *
+ * Fails, after linking everything it can, when bare-link produced no
+ * artefact for an addon the header promises — that addon would crash the
+ * worklet at runtime as soon as it is required. Also fails without touching
+ * the filesystem when a packed host is of a family the bundler cannot link
+ * for, or when an addon output directory contains the project root.
  */
 export async function linkAddons (
   config: ResolvedConfig,
@@ -34,32 +57,45 @@ export async function linkAddons (
   const { verbose, silent } = options
   const log = (msg: string): void => { if (!silent) console.log(msg) }
 
-  const platforms = options.platforms ?? config.options?.platforms ?? ['ios', 'macos', 'android']
+  const hosts = config.options?.targets ?? DEFAULT_BUNDLE_BUILD_HOSTS
+  let platforms: LinkPlatform[] = []
+  let addons: LinkedAddon[] = []
 
   try {
+    platforms = linkPlatformsForHosts(hosts)
+
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const link = require('bare-link') as (modulePath: string, opts: { hosts: string[], out: string }) => AsyncIterable<unknown>
+    const link = require('bare-link') as BareLink
+
+    addons = discoverLinkedAddons(readBundle(config.resolvedOutput.bundle), config.projectRoot)
+    log(`  Discovered ${addons.length} native addons from bundle header`)
+    if (verbose) for (const addon of addons) log(`    ${addon.name}@${addon.version}`)
+
+    const gaps: string[] = []
 
     for (const platform of platforms) {
       const outputPath = config.resolvedOutput.addons[platform]
-      const hosts = BARE_LINK_HOSTS[platform]
+      const platformHosts = hostsForPlatform(platform, hosts)
 
       log(`  Linking addons for ${platform} → ${outputPath}`)
+      if (fs.existsSync(outputPath)) {
+        clearAddonOutputDir(outputPath, config.projectRoot)
+        log(`  Cleared ${outputPath} (stale artefacts from earlier builds are not kept)`)
+      }
       fs.mkdirSync(outputPath, { recursive: true })
 
-      const modules = getModulesForPlatform(platform)
-      for (const moduleName of modules) {
-        const modulePath = path.join(config.projectRoot, 'node_modules', moduleName)
+      const written = new Set<string>()
+      for (const addon of addons) {
+        if (verbose) log(`    Linking ${addon.name}...`)
 
-        if (!fs.existsSync(modulePath)) {
-          if (verbose) log(`    Skipping ${moduleName} (not installed)`)
-          continue
+        // bare-link is an async generator yielding the path of each resource it writes
+        for await (const resource of link(addon.dir, { hosts: platformHosts, out: outputPath })) {
+          written.add(path.basename(resource))
         }
+      }
 
-        if (verbose) log(`    Linking ${moduleName}...`)
-
-        // bare-link is an async generator — iterate to completion
-        for await (const step of link(modulePath, { hosts, out: outputPath })) { void step }
+      for (const addon of findMissingArtefacts(addons, platform, written)) {
+        gaps.push(`${platform}: ${addon.name}@${addon.version} (no prebuilds for hosts ${platformHosts.join(', ')})`)
       }
 
       log(`  ✓ ${platform} addons → ${outputPath}`)
@@ -72,13 +108,42 @@ export async function linkAddons (
       }
     }
 
-    return { success: true, duration: Date.now() - startTime, platforms }
+    if (gaps.length > 0) {
+      return {
+        success: false,
+        duration: Date.now() - startTime,
+        platforms,
+        addons,
+        error:
+          'bare-link produced no artefact for addons the bundle requires; ' +
+          'the worklet will fail to load them at runtime:\n' +
+          gaps.map(g => `    - ${g}`).join('\n')
+      }
+    }
+
+    return { success: true, duration: Date.now() - startTime, platforms, addons }
   } catch (error) {
     return {
       success: false,
       duration: Date.now() - startTime,
       platforms,
+      addons,
       error: error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+/**
+ * Remove an addon output directory so a fresh link leaves exactly the
+ * header's addon set behind.
+ *
+ * @throws {Error} If the directory is the project root or contains it — a
+ *   misconfigured `output.addons` path must never wipe the project.
+ */
+function clearAddonOutputDir (outputPath: string, projectRoot: string): void {
+  const relative = path.relative(path.resolve(outputPath), path.resolve(projectRoot))
+  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+    throw new Error(`Refusing to clear addon output directory ${outputPath}: it contains the project root ${projectRoot}`)
+  }
+  fs.rmSync(outputPath, { recursive: true, force: true })
 }

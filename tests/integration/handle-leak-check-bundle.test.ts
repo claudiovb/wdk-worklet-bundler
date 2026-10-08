@@ -44,7 +44,7 @@ describe('generateHandleLeakCheckCode against real bare-pack output', () => {
     resolvedOutput: {
       bundle: path.join(projDir, '.wdk/wdk.bundle.js'),
       types: path.join(projDir, '.wdk/wdk.d.ts'),
-      addons: { ios: '', macos: '', android: '' },
+      addons: { ios: '', macos: '', android: '', linux: '', windows: '' },
       addonsYml: ''
     },
     ...overrides
