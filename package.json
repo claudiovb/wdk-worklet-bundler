@@ -43,8 +43,10 @@
   "dependencies": {
     "ajv": "8.20.0",
     "bare-bundle": "^1.10.0",
+    "bare-bundle-id": "^1.0.2",
     "bare-link": "^3.1.0",
-    "bare-pack": "^2.0.0",
+    "bare-module-traverse": "^2.6.0",
+    "bare-pack": "^2.2.0",
     "commander": "^12.1.0",
     "esbuild": "0.28.1"
   },

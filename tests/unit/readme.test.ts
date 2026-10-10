@@ -17,6 +17,7 @@ describe('README configuration reference', () => {
       'linkAddons',
       'swiftTarget',
       'convertEsmToCjs',
+      'builtins',
       'handleLeakCheck'
     ]
 

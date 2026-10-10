@@ -5,20 +5,22 @@
 
 import fs from 'fs'
 import path from 'path'
-import { execFileSync } from 'child_process'
 import type { ResolvedConfig } from '../config/types'
 import { shouldConvertEsmToCjs } from '../config/loader'
 import { generateEntryPoint } from '../generators/entry'
 import { generateJsonRpcEntryPoint } from '../generators/entry-jsonrpc'
 import { linkAddons } from './addons'
 import { linkPlatformsForHosts } from './linked-addons'
-import { convertBundleEsmToCjs } from './convert-esm-to-cjs'
+import { MissingModuleError, packBundle, type EsmToCjsStats } from './pack'
+import { writeBundleFile } from './bundle-file'
 import { validateDependencies, findMissingOptionalPeers } from '../validators/dependencies'
 import { getPackageList } from '../config/packages'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_OUTPUT_DIR, DEFAULT_ENTRY_FILENAME } from '../constants'
 
 export type { LinkAddonsOptions, LinkAddonsResult } from './addons'
 export { linkAddons } from './addons'
+export type { PackBundleOptions, PackBundleResult, EsmToCjsStats, ConditionalSpecifier } from './pack'
+export { packBundle, MissingModuleError } from './pack'
 
 export interface GenerateBundleOptions {
   dryRun?: boolean
@@ -29,95 +31,33 @@ export interface GenerateBundleOptions {
   deferOptionalPeers?: boolean
 }
 
+/** What bare-pack produced, as recorded in the bundle header. */
+export interface GenerateBundlePackInfo {
+  /** Hex content hash stamped into the header. */
+  id: string
+  /** Hosts the bundle was packed for. */
+  hosts: string[]
+  /** Number of files in the bundle. */
+  files: number
+  /** Addon hrefs in the header (`linked:` URLs the app must ship, `builtin:` ones the host embeds). */
+  addons: string[]
+  /** Whether the bundle still carries ES modules (see PackBundleResult.containsEsm). */
+  containsEsm: boolean
+  /** ESM→CJS conversion counters, or null when conversion was off. */
+  esmToCjs: EsmToCjsStats | null
+}
+
 export interface GenerateBundleResult {
   success: boolean
   bundlePath: string
   typesPath: string
+  /** Size of the bundle file written, wrapper included. */
   bundleSize: number
   duration: number
+  /** Present once packing succeeded (also on a failure in a later step). */
+  pack?: GenerateBundlePackInfo
   error?: string
   missingModule?: string
-}
-
-interface BarePackOptions {
-  entryPath: string
-  outputPath: string
-  importsPath: string
-  targets: string[]
-  cwd: string
-  verbose?: boolean
-  defer?: string[]
-}
-
-class MissingModuleError extends Error {
-  constructor (public readonly missingModule: string) {
-    super(`Missing module: ${missingModule}`)
-    this.name = 'MissingModuleError'
-  }
-}
-
-/**
- * Run bare-pack to create the final bundle
- */
-function runBarePack (options: BarePackOptions): void {
-  const { entryPath, outputPath, importsPath, targets, cwd, verbose, defer } = options
-
-  // Build args array to prevent command injection
-  const args = ['--no-install', 'bare-pack']
-  for (const target of targets) {
-    // Validate target format (alphanumeric with dashes only)
-    if (!/^[a-z0-9-]+$/i.test(target)) {
-      throw new Error(`Invalid target format: ${target}`)
-    }
-    args.push('--host', target)
-  }
-  for (const specifier of defer ?? []) {
-    // Validate npm package name format (optionally scoped)
-    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/i.test(specifier)) {
-      throw new Error(`Invalid defer specifier format: ${specifier}`)
-    }
-    args.push('--defer', specifier)
-  }
-  args.push('--linked', '--imports', importsPath, '--out', outputPath, entryPath)
-
-  if (verbose === true) {
-    console.log(`  Running: npx ${args.join(' ')}`)
-    console.log(`  CWD: ${cwd}`)
-  }
-
-  try {
-    execFileSync('npx', args, {
-      cwd,
-      stdio: verbose === true ? 'inherit' : 'pipe'
-    })
-  } catch (error) {
-    // Try to extract stdout/stderr if available
-    const execError = error as { stderr?: Buffer | string, stdout?: Buffer | string }
-    const stderr: string = execError.stderr != null ? execError.stderr.toString() : ''
-    const stdout: string = execError.stdout != null ? execError.stdout.toString() : ''
-    const output = stderr + stdout
-
-    // Check for missing module error
-    const match = output.match(/MODULE_NOT_FOUND: Cannot find module '(.+?)'/)
-    if (match?.[1]) {
-      throw new MissingModuleError(match[1])
-    }
-
-    // Re-throw original error if we couldn't parse it
-    throw error
-  }
-}
-
-/**
- * Generate the pack.imports.json file
- */
-function generateImportsFile (outputDir: string): string {
-  const imports = {}
-
-  const importsPath = path.join(outputDir, 'pack.imports.json')
-  fs.writeFileSync(importsPath, JSON.stringify(imports, null, 2))
-
-  return importsPath
 }
 
 /**
@@ -205,38 +145,28 @@ export async function generateBundle (
     fs.mkdirSync(generatedDir, { recursive: true })
     fs.mkdirSync(path.dirname(config.resolvedOutput.bundle), { recursive: true })
 
-    // Step 1-3: Generate artifacts or use existing
+    // Step 1: Generate the worklet entry point or use the existing one
     let entryPath: string
-    let importsPath: string
 
     if (options.skipGeneration) {
       if (verbose) log('  Skipping artifact generation, using existing files...')
 
       entryPath = path.join(generatedDir, DEFAULT_ENTRY_FILENAME)
-      importsPath = path.join(generatedDir, 'pack.imports.json')
 
       if (!fs.existsSync(entryPath)) {
         throw new Error(`Artifacts not found at ${entryPath}. Run without --skip-generation first.`)
       }
-      if (!fs.existsSync(importsPath)) {
-        throw new Error(`Artifacts not found at ${importsPath}. Run without --skip-generation first.`)
-      }
     } else {
-      // Step 1: Generate worklet entry point (dispatch by transport)
       if (verbose) log(`  Generating ${isJsonRpc ? 'JSON-RPC' : 'HRPC'} worklet entry point...`)
       entryPath = isJsonRpc
         ? await generateJsonRpcEntryPoint(config, generatedDir)
         : await generateEntryPoint(config, generatedDir)
       if (verbose) log(`    Entry: ${entryPath}`)
-
-      // Step 2: Generate imports file
-      if (verbose) log('  Generating imports file...')
-      importsPath = generateImportsFile(generatedDir)
     }
 
-    // Step 4: Run bare-pack
-    if (verbose) log('  Running bare-pack...')
-    const targets = config.options?.targets || getDefaultHosts()
+    // Step 2: Pack the module graph
+    const targets = config.options?.targets ?? getDefaultHosts()
+    const convertEsmToCjs = shouldConvertEsmToCjs(config)
 
     // Missing peers marked optional via peerDependenciesMeta (e.g.
     // @ledgerhq/ledger-bitcoin for @bitcoinerlab/descriptors) are deferred so
@@ -252,32 +182,36 @@ export async function generateBundle (
       }
     }
 
+    if (verbose) {
+      log(`  Packing for hosts: ${targets.join(', ')}`)
+      if (convertEsmToCjs) log('  Converting ESM to CJS while packing...')
+    }
+
+    let packed
     try {
-      runBarePack({
-        entryPath,
-        outputPath: config.resolvedOutput.bundle,
-        importsPath,
-        targets,
-        cwd: config.projectRoot,
-        verbose,
-        defer: deferredPeers
+      packed = await packBundle({
+        entry: entryPath,
+        base: config.projectRoot,
+        hosts: targets,
+        linked: true,
+        defer: deferredPeers,
+        builtins: config.options?.builtins,
+        convertEsmToCjs
       })
-    } catch (barePackError) {
-      // Check if we identified a missing module
-      if (barePackError instanceof MissingModuleError) {
+    } catch (packError) {
+      if (packError instanceof MissingModuleError) {
         return {
           success: false,
           bundlePath: config.resolvedOutput.bundle,
           typesPath: config.resolvedOutput.types,
           bundleSize: 0,
           duration: Date.now() - startTime,
-          error: `Missing module: ${barePackError.missingModule}`,
-          missingModule: barePackError.missingModule
+          error: `Missing module: ${packError.missingModule}`,
+          missingModule: packError.missingModule
         }
       }
 
-      // bare-pack failed - provide helpful error message
-      const errorMsg = barePackError instanceof Error ? barePackError.message : String(barePackError)
+      const errorMsg = packError instanceof Error ? packError.message : String(packError)
 
       return {
         success: false,
@@ -291,29 +225,35 @@ export async function generateBundle (
           '  1. WDK modules are not installed in the project\n' +
           '  2. A dependency uses Node.js APIs not available in Bare runtime\n\n' +
           'Generated files are available at:\n' +
-          `  Entry: ${entryPath}\n` +
-          'You can run bare-pack manually once dependencies are resolved.'
+          `  Entry: ${entryPath}`
       }
     }
 
-    // Step 4b: Convert ESM to CJS in bundle (for engines without ESM support
-    // in Bare, e.g. JSC and QuickJS). The entry generators emit the matching
-    // runtime .mjs loader patch based on the same flag.
-    if (shouldConvertEsmToCjs(config)) {
-      if (verbose) log('  Converting ESM to CJS in bundle...')
-      convertBundleEsmToCjs(config.resolvedOutput.bundle, { minify: true, verbose })
+    const pack: GenerateBundlePackInfo = {
+      id: packed.id,
+      hosts: packed.hosts,
+      files: packed.files,
+      addons: packed.addons,
+      containsEsm: packed.containsEsm,
+      esmToCjs: packed.esmToCjs
     }
 
-    // Get bundle stats
-    let bundleSize = 0
-    if (fs.existsSync(config.resolvedOutput.bundle)) {
-      bundleSize = fs.statSync(config.resolvedOutput.bundle).size
+    if (packed.esmToCjs !== null) {
+      log(`  ESM→CJS: converted ${packed.esmToCjs.converted} JS files, patched ${packed.esmToCjs.packagesPatched} package.json files`)
+    } else if (isJsonRpc && packed.containsEsm) {
+      // JSC and QuickJS cannot load ES modules: this bundle aborts at boot on
+      // those engines. Not an error because V8 hosts load it fine.
+      log('  ⚠️  Bundle contains ES modules and options.convertEsmToCjs is off; it will not load on JavaScriptCore (iOS/macOS) or QuickJS targets. Set options.convertEsmToCjs: true unless every target runs V8.')
     }
 
-    // Step 5: Link native addons (if enabled, or always for jsonrpc unless explicitly disabled)
+    // Step 3: Write the bundle in the wrapper its extension calls for
+    const bundleSize = writeBundleFile(config.resolvedOutput.bundle, packed.bundle).length
+    if (verbose) log(`    Bundle: ${config.resolvedOutput.bundle} (${packed.files} files, id ${packed.id})`)
+
+    // Step 4: Link native addons (if enabled, or always for jsonrpc unless explicitly disabled)
     if (shouldLinkAddons) {
       if (verbose) log('  Linking native addons...')
-      const addonsResult = await linkAddons(config, { verbose, silent })
+      const addonsResult = await linkAddons(config, { verbose, silent, bundle: packed.bundle })
       if (!addonsResult.success) {
         // A missing or unlinkable addon crashes the worklet at its first
         // require on device, so the build fails here instead.
@@ -323,18 +263,19 @@ export async function generateBundle (
           typesPath: config.resolvedOutput.types,
           bundleSize,
           duration: Date.now() - startTime,
+          pack,
           error: `Native addon linking failed: ${addonsResult.error ?? 'unknown error'}`
         }
       }
     }
 
-    // Step 7: Generate TypeScript declarations (optional)
+    // Step 5: Generate TypeScript declarations (optional)
     if (!options.skipTypes) {
       if (verbose) log('  Generating TypeScript declarations...')
       generateTypeDeclarations(config)
     }
 
-    // Step 8: Generate index.js for easy importing
+    // Step 6: Generate index.js for easy importing
     if (verbose) log('  Generating index.js...')
     generateIndexFile(generatedDir, config.resolvedOutput.bundle)
 
@@ -343,7 +284,8 @@ export async function generateBundle (
       bundlePath: config.resolvedOutput.bundle,
       typesPath: config.resolvedOutput.types,
       bundleSize,
-      duration: Date.now() - startTime
+      duration: Date.now() - startTime,
+      pack
     }
   } catch (error) {
     return {
@@ -402,11 +344,8 @@ export async function generateSourceFiles (
     ? await generateJsonRpcEntryPoint(config, generatedDir)
     : await generateEntryPoint(config, generatedDir)
 
-  // Generate imports file
-  generateImportsFile(generatedDir)
-
   // Generate index.js for easy importing (note: bundle won't exist yet in source-only mode)
-  // Users will need to run bare-pack first, but we create the index anyway
+  // Users will need to pack first, but we create the index anyway
   generateIndexFile(generatedDir, config.resolvedOutput.bundle)
 
   return {

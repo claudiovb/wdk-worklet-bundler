@@ -6,6 +6,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import type Bundle from 'bare-bundle'
 import type { ResolvedConfig } from '../config/types'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_SWIFT_TARGET } from '../constants'
 import { generateAddonsYml } from '../generators/addons-yml'
@@ -15,6 +16,8 @@ import { discoverLinkedAddons, findMissingArtefacts, hostsForPlatform, linkPlatf
 export interface LinkAddonsOptions {
   verbose?: boolean
   silent?: boolean
+  /** The packed bundle, when the caller still has it in memory; otherwise it is read from `resolvedOutput.bundle`. */
+  bundle?: Bundle
 }
 
 export interface LinkAddonsResult {
@@ -31,8 +34,8 @@ type BareLink = (modulePath: string, opts: { hosts: string[], out: string }) => 
 
 /**
  * Link the native addons the packed bundle requires using bare-link. The
- * addon set is read from the bundle header written by `bare-pack --linked`,
- * so the bundle must exist before linking. The platforms to link for are
+ * addon set comes from the bundle header written by packing with `linked`
+ * resolution — the in-memory bundle when provided, else the file on disk. The platforms to link for are
  * derived from the hosts the bundle was packed for (`options.targets`):
  * `ios-*` → iOS, `darwin-*` → macOS, `android-*` → Android, each linked with
  * exactly the hosts of its family. Generates the artefacts consumers embed
@@ -67,7 +70,8 @@ export async function linkAddons (
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const link = require('bare-link') as BareLink
 
-    addons = discoverLinkedAddons(readBundle(config.resolvedOutput.bundle), config.projectRoot)
+    const bundle = options.bundle ?? readBundle(config.resolvedOutput.bundle)
+    addons = discoverLinkedAddons(bundle, config.projectRoot)
     log(`  Discovered ${addons.length} native addons from bundle header`)
     if (verbose) for (const addon of addons) log(`    ${addon.name}@${addon.version}`)
 

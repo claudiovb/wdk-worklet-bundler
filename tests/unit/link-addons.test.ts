@@ -244,6 +244,26 @@ describe('linkAddons', () => {
     expect(fs.existsSync(config.resolvedOutput.bundle)).toBe(true)
   })
 
+  it('should link from the in-memory bundle when given one, without reading the file', async () => {
+    // Arrange: the file on disk is gone; only the packed bundle in memory remains
+    fs.rmSync(config.resolvedOutput.bundle)
+    config.options = { targets: ANDROID_HOSTS }
+    const bundle = new Bundle()
+    bundle.write('/node_modules/bare-fs/package.json', JSON.stringify({ name: 'bare-fs', version: '4.7.4', addon: true }))
+    bundle.addons = ['linked:libbare-fs.4.7.4.so']
+    mockLink.mockImplementation(linkYielding({ [bareFsDir]: ['libbare-fs.4.7.4.so'] }))
+
+    // Act
+    const result = await linkAddons(config, { silent: true, bundle })
+
+    // Assert
+    expect(result.success).toBe(true)
+    expect(result.addons.map(a => a.name)).toEqual(['bare-fs'])
+    expect(mockLink.mock.calls).toEqual([
+      [bareFsDir, { hosts: ANDROID_HOSTS, out: config.resolvedOutput.addons.android }]
+    ])
+  })
+
   it('should fail without linking when the bundle has not been generated yet', async () => {
     // Arrange
     config.options = { targets: ANDROID_HOSTS }

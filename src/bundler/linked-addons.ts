@@ -116,7 +116,10 @@ export function hostsForPlatform (platform: LinkPlatform, hosts: string[]): stri
 }
 
 /**
- * Discover the native addons a packed bundle will load at runtime.
+ * Discover the native addons a packed bundle will load at runtime and the
+ * host app must ship. Only `linked:` hrefs count: an addon the pack resolved
+ * to a `builtin:` URL (listed in `options.builtins`) is embedded in the host
+ * runtime and is skipped here.
  *
  * @param bundle - A bundle produced by bare-pack with `--linked`.
  * @param projectRoot - Directory bare-pack ran in; bundle keys are relative to it.
@@ -131,6 +134,7 @@ export function discoverLinkedAddons (bundle: Bundle, projectRoot: string): Link
   const byPackage = new Map<string, LinkedAddon>()
 
   for (const href of bundle.addons) {
+    if (!href.startsWith(LINKED_PROTOCOL)) continue
     const artefact = parseLinkedHref(href)
     const pkg = packages.find(p => p.mangledName === artefact.mangledName && (artefact.version === null || p.version === artefact.version))
     if (pkg === undefined) {

@@ -4,7 +4,6 @@ import path from 'path'
 import os from 'os'
 
 const CLI_PATH = path.resolve(__dirname, '../../dist/cli.js')
-const BARE_PACK_MODULE = path.resolve(__dirname, '../../node_modules/bare-pack')
 
 describe('CLI Integration Tests', () => {
   let tempDir: string
@@ -189,13 +188,8 @@ exports.utils = { logger: { info: () => {}, error: () => {} } };
 `
       })
 
-      // generateBundle runs `npx --no-install bare-pack` from the fixture
-      // project, so expose this repo's already-installed test dependency there.
-      fs.symlinkSync(BARE_PACK_MODULE, path.join(tempDir, 'node_modules', 'bare-pack'), 'dir')
-      const binDir = path.join(tempDir, 'node_modules', '.bin')
-      fs.mkdirSync(binDir, { recursive: true })
-      fs.symlinkSync('../bare-pack/bin.js', path.join(binDir, 'bare-pack'))
-
+      // The fixture project has no bare-pack of its own: packing goes through
+      // the JS API resolved from the bundler's install, as with a file: dependency.
       const output = runCli('generate --skip-link-addons --keep-artifacts --no-types')
       const entry = fs.readFileSync(path.join(tempDir, '.wdk', 'wdk-worklet.generated.js'), 'utf-8')
       const bundlePath = path.join(tempDir, 'out', 'wdk.bundle')

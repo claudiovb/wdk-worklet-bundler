@@ -25,7 +25,7 @@ Uses JSON-RPC 2.0 with length-prefixed framing over BareKit IPC. Required for Sw
 When `transport: 'jsonrpc'` is set:
 
 - The bundle is output **without a `.js` extension** (BareKit loads it as binary)
-- Set `options.convertEsmToCjs: true` to convert ESM modules to CJS via esbuild. This is **required for iOS/macOS (JavaScriptCore) and QuickJS targets** and optional only for V8. The option defaults to `false` for both transports.
+- Set `options.convertEsmToCjs: true` to convert ESM modules to CJS via esbuild while packing. This is **required for iOS/macOS (JavaScriptCore) and QuickJS targets** and optional only for V8. The option defaults to `false` for both transports; the bundler warns when a JSON-RPC bundle is packed with ES modules left in.
 - `linkAddons` defaults to `true` — the native addons the bundle requires are discovered from its header and linked automatically for every platform in `options.targets` (see [Native addon discovery](#native-addon-discovery))
 - `addons.yml` is generated automatically inside `ios-addons/` for BareKit Swift integration
 
@@ -117,8 +117,7 @@ npx @tetherto/wdk-worklet-bundler
 
    This will:
    - Generate the JSON-RPC worklet entry point
-   - Run `bare-pack` to create the binary bundle
-   - Convert all ESM modules to CJS using `convertEsmToCjs: true` (required for JSC and QuickJS)
+   - Pack the module graph with bare-pack into the binary bundle, converting ESM modules to CJS on the way when `convertEsmToCjs: true` (required for JSC and QuickJS)
    - Run `bare-link` for every native addon recorded in the bundle header, writing xcframeworks into `ios-addons/`
    - Generate `ios-addons/addons.yml` for BareKit Swift integration
 
@@ -144,7 +143,7 @@ wdk-worklet-bundler generate [options]
 - `--link-addons`: Force linking native addons even for HRPC.
 - `--skip-link-addons`: Skip native addon linking even for JSON-RPC.
 - `--keep-artifacts`: Keep the intermediate `.wdk/` folder (useful for debugging).
-- `--source-only`: Generate entry files but skip `bare-pack`.
+- `--source-only`: Generate entry files but skip packing.
 - `--skip-generation`: Skip artifact generation and use existing files.
 - `--dry-run`: Print what would happen without writing files.
 - `--no-types`: Skip generating TypeScript definitions.
@@ -303,9 +302,19 @@ module.exports = {
     // Defaults to 'app'. Set this to your Xcode target name if it differs.
     swiftTarget: "MyApp",
 
-    // Convert ESM to CJS (default: false for both transports).
+    // Convert ESM to CJS while packing (default: false for both transports).
     // Required for iOS/macOS (JSC) and QuickJS; optional only for V8.
     convertEsmToCjs: true,
+
+    // Modules and addons the host runtime embeds (bare-pack `builtins`).
+    // Matching specifiers resolve to `builtin:` URLs served by the host
+    // instead of being packed or linked. Resolution is version-exact: the
+    // href carries the version packed from node_modules, and the host only
+    // serves the version it was built with, so each listed addon package
+    // must be pinned to the version in the bare-kit release's package-lock
+    // (list: bare-kit's shared/builtins.json). A mismatch aborts the worklet
+    // at its first require of that addon. Default: none.
+    builtins: [{ addon: "bare-fs" }],
 
     // Enable pear-wrk-wdk's handle-leak diagnostic. Use a positive number to
     // override its tick interval; omit to disable (default: disabled).
@@ -318,10 +327,11 @@ module.exports = {
 
 ## Native addon discovery
 
-`bare-pack --linked` resolves every `require.addon()` call in the module graph to a `linked:<artefact>` URL and records the full set in the bundle header. Each URL is a promise that the host app ships a native library with exactly that name (`bare-fs.4.7.4.xcframework` on Apple, `libbare-fs.4.7.4.so` on Android). After packing, the bundler reads that set back from the bundle and runs `bare-link` once per addon package, so:
+Packing with linked resolution (what `bare-pack --linked` does) resolves every `require.addon()` call in the module graph to a `linked:<artefact>` URL and records the full set in the bundle header. Each URL is a promise that the host app ships a native library with exactly that name (`bare-fs.4.7.4.xcframework` on Apple, `libbare-fs.4.7.4.so` on Android). After packing, the bundler reads that set back from the bundle and runs `bare-link` once per addon package, so:
 
 - Adding a package with native code to your app — directly, transitively, or via `preloadModules` — links it with no bundler change.
 - Nothing the bundle never requires is linked, which keeps the native output as small as the bundle needs.
+- An addon listed in `options.builtins` resolves to a `builtin:<name>@<version>` URL instead and is not linked: the host runtime already embeds it. The version is the one packed from `node_modules` and the host serves only the version it was built with, so pin those packages to the versions in the bare-kit release's `package-lock.json` or the worklet aborts at its first require of the addon (`No addon registered for 'bare-pipe@4.2.3'` on older Bare, `CANNOT_LOAD: Cannot load addon 'builtin:…'` on newer). bare-link still writes an artefact for a builtin addon that a linked addon depends on, so the output directory can hold a few more entries than the header lists.
 - The `Discovered N native addons from bundle header` line in the build output lists what will be linked (`--verbose` prints every package).
 - The platforms to link for come from `options.targets`: `ios-*` hosts produce xcframeworks in `output.addons.ios`, `darwin-*` frameworks in `output.addons.macos`, `android-*` shared objects in `output.addons.android`, and `linux-*` / `win32-*` their libraries in `output.addons.linux` / `output.addons.windows`. Each platform is linked with exactly the hosts you packed for it; there is no separate platform list to keep in sync.
 
@@ -396,7 +406,7 @@ Run `wdk-worklet-bundler generate --install`. This installs all packages defined
 This happens when ESM modules are loaded eagerly at bundle startup. The bundler handles this in two ways:
 
 1. Wallet modules are lazy-loaded via a Proxy — they are only `require()`'d when first accessed, not at startup
-2. The ESM→CJS conversion step (enabled with `options.convertEsmToCjs: true`, required for JSC and QuickJS) rewrites all ESM syntax to CJS so the engine can load it
+2. The ESM→CJS conversion (enabled with `options.convertEsmToCjs: true`, required for JSC and QuickJS) rewrites all ESM syntax to CJS while packing so the engine can load it
 
 If you see this error, make sure you're using a recent version of the bundler that includes both fixes.
 

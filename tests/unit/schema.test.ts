@@ -160,6 +160,22 @@ describe('Config Schema Validation', () => {
       expect(() => validateConfig(config)).toThrow('must be array')
     })
 
+    it('should validate options.builtins with string and conditional entries', () => {
+      const config = {
+        networks: { eth: { package: 'pkg' } },
+        options: { builtins: ['bare-os', { addon: 'bare-fs' }, ['bare-url']] }
+      }
+      expect(() => validateConfig(config)).not.toThrow()
+    })
+
+    it('should fail if options.builtins is not an array', () => {
+      const config = {
+        networks: { eth: { package: 'pkg' } },
+        options: { builtins: 'bare-fs' }
+      }
+      expect(() => validateConfig(config)).toThrow('Invalid configuration')
+    })
+
     it('should validate options.handleLeakCheck set to true', () => {
       const config = {
         networks: { eth: { package: 'pkg' } },

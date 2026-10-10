@@ -1,20 +1,18 @@
 /**
- * Integration test: run the REAL bare-pack binary with `--linked` against a
- * fixture project containing native addon packages, and verify the addon set
- * discovered from the resulting bundle header — hrefs, name mangling and
- * package directories all come from bare-pack itself, so a bare-pack or
- * bare-addon-resolve naming change breaks this test instead of silently
- * diverging from our parser.
+ * Integration test: pack with the REAL bare-pack (JS API, linked resolution)
+ * against a fixture project containing native addon packages, and verify the
+ * addon set discovered from the resulting bundle header — hrefs, name
+ * mangling and package directories all come from bare-pack itself, so a
+ * bare-pack or bare-addon-resolve naming change breaks this test instead of
+ * silently diverging from our parser.
  */
 
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { execFileSync } from 'child_process'
-import { readBundle } from '../../src/bundler/bundle-file'
+import { readBundle, writeBundleFile } from '../../src/bundler/bundle-file'
 import { discoverLinkedAddons } from '../../src/bundler/linked-addons'
-
-const BARE_PACK = path.join(__dirname, '../../node_modules/.bin/bare-pack')
+import { packBundle } from '../../src/bundler/pack'
 
 describe('discoverLinkedAddons against real bare-pack output', () => {
   let tempDir: string
@@ -42,25 +40,22 @@ describe('discoverLinkedAddons against real bare-pack output', () => {
       'module.exports = require.addon()\n')
     fs.writeFileSync(path.join(projDir, 'entry.js'),
       "module.exports = [require('plain-dep'), require('@scope/native')]\n")
-    fs.writeFileSync(path.join(projDir, 'imports.json'), '{}')
   })
 
   afterAll(() => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
-  const pack = (outName: string, hosts: string[]): string => {
+  const pack = async (outName: string, hosts: string[]): Promise<string> => {
     const out = path.join(projDir, outName)
-    const hostArgs = hosts.flatMap(h => ['--host', h])
-    execFileSync(BARE_PACK, [...hostArgs, '--linked', '--imports', 'imports.json', '--out', out, 'entry.js'], {
-      cwd: projDir, stdio: 'pipe'
-    })
+    const { bundle } = await packBundle({ entry: path.join(projDir, 'entry.js'), base: projDir, hosts })
+    writeBundleFile(out, bundle)
     return out
   }
 
-  it('should discover the addons bare-pack recorded for iOS and Android hosts', () => {
+  it('should discover the addons bare-pack recorded for iOS and Android hosts', async () => {
     // Arrange
-    const bundlePath = pack('app.bundle', ['ios-arm64', 'android-arm64'])
+    const bundlePath = await pack('app.bundle', ['ios-arm64', 'android-arm64'])
 
     // Act
     const addons = discoverLinkedAddons(readBundle(bundlePath), projDir)
@@ -82,9 +77,9 @@ describe('discoverLinkedAddons against real bare-pack output', () => {
     ])
   })
 
-  it('should read the header through the module.exports wrapper of a .bundle.js output', () => {
+  it('should read the header through the module.exports wrapper of a .bundle.js output', async () => {
     // Arrange
-    const bundlePath = pack('app.bundle.js', ['android-arm64'])
+    const bundlePath = await pack('app.bundle.js', ['android-arm64'])
 
     // Act
     const addons = discoverLinkedAddons(readBundle(bundlePath), projDir)
