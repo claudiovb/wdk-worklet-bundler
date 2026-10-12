@@ -19,7 +19,7 @@
 import fs from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import type Bundle from 'bare-bundle'
-import { isJavaScriptPath, minifyJson, stripModuleType, transformEsmToCjs } from './esm-to-cjs'
+import { isJavaScriptPath, stripModuleType, transformEsmToCjs } from './esm-to-cjs'
 
 /** A module specifier, optionally nested under resolution conditions (bare-module-resolve's ConditionalSpecifier). */
 export type ConditionalSpecifier = string | ConditionalSpecifier[] | { [condition: string]: ConditionalSpecifier }
@@ -49,7 +49,7 @@ export interface PackBundleOptions {
    * (JSC, QuickJS). Defaults to false.
    */
   convertEsmToCjs?: boolean
-  /** Minify converted sources and JSON files. Only applies with `convertEsmToCjs`. Defaults to true. */
+  /** Minify converted sources. Only applies with `convertEsmToCjs`. Defaults to true. */
   minify?: boolean
   /** Maximum concurrent module reads; omit for bare-pack's unbounded default. */
   concurrency?: number
@@ -198,8 +198,8 @@ async function readModuleFromDisk (url: URL): Promise<Buffer | null> {
 }
 
 /**
- * readModule that converts JavaScript to CommonJS, strips `"type": "module"`
- * and (when minifying) compacts JSON as bare-pack reads each file. bare-pack
+ * readModule that converts JavaScript to CommonJS and strips `"type": "module"`
+ * from package manifests as bare-pack reads each file. bare-pack
  * ≥ 2.2 memoizes reads, so each file is transformed once however many hosts
  * are packed. Conversion failures are collected and the original source is
  * returned, so the whole list is reported after the pack.
@@ -229,18 +229,10 @@ function convertingReadModule (stats: EsmToCjsStats, failures: string[], minify:
           stats.packagesPatched++
           return Buffer.from(patched)
         }
-        if (minify) {
-          const compact = minifyJson(source.toString())
-          if (compact !== null) return Buffer.from(compact)
-        }
       } catch (e) {
         failures.push(`${filePath}: unreadable package.json: ${e instanceof Error ? e.message : String(e)}`)
       }
       return source
-    }
-    if (filePath.endsWith('.json') && minify) {
-      const compact = minifyJson(source.toString())
-      return compact !== null ? Buffer.from(compact) : source
     }
     return source
   }

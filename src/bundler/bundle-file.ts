@@ -88,7 +88,7 @@ export function writeBundleFile (outputPath: string, bundle: Bundle): Buffer {
  * Load a bare-pack artifact from disk as a parsed bare-bundle Bundle,
  * whatever output wrapper bare-pack applied to it.
  *
- * @param bundlePath - Path to a bundle written by this package or the `bare-pack` CLI.
+ * @param bundlePath - Path to a bare-pack bundle in any output wrapper.
  * @returns The parsed bundle (header, files, addons, resolutions).
  * @throws {Error} If the file does not exist (ENOENT) or does not contain a
  *   bare-pack bundle in any of the supported wrappers.

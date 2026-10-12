@@ -55,17 +55,3 @@ export function stripModuleType (source: string): string | null {
   delete pkg.type
   return JSON.stringify(pkg)
 }
-
-/**
- * Re-serialize a JSON document without whitespace.
- *
- * @returns The compact document, or null when the source is not valid JSON
- *   (minification is cosmetic, so the caller keeps the original bytes).
- */
-export function minifyJson (source: string): string | null {
-  try {
-    return JSON.stringify(JSON.parse(source))
-  } catch {
-    return null
-  }
-}

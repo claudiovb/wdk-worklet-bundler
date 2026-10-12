@@ -25,7 +25,7 @@ Uses JSON-RPC 2.0 with length-prefixed framing over BareKit IPC. Required for Sw
 When `transport: 'jsonrpc'` is set:
 
 - The bundle is output **without a `.js` extension** (BareKit loads it as binary)
-- Set `options.convertEsmToCjs: true` to convert ESM modules to CJS via esbuild while packing. This is **required for iOS/macOS (JavaScriptCore) and QuickJS targets** and optional only for V8. The option defaults to `false` for both transports; the bundler warns when a JSON-RPC bundle is packed with ES modules left in.
+- Set `options.convertEsmToCjs: true` to convert ESM modules to CJS via esbuild while packing. This is **required for iOS/macOS (JavaScriptCore) and QuickJS targets** and optional only for V8. The option defaults to `false` for both transports.
 - `linkAddons` defaults to `true` — the native addons the bundle requires are discovered from its header and linked automatically for every platform in `options.targets` (see [Native addon discovery](#native-addon-discovery))
 - `addons.yml` is generated automatically inside `ios-addons/` for BareKit Swift integration
 
@@ -335,7 +335,7 @@ Packing with linked resolution (what `bare-pack --linked` does) resolves every `
 - The `Discovered N native addons from bundle header` line in the build output lists what will be linked (`--verbose` prints every package).
 - The platforms to link for come from `options.targets`: `ios-*` hosts produce xcframeworks in `output.addons.ios`, `darwin-*` frameworks in `output.addons.macos`, `android-*` shared objects in `output.addons.android`, and `linux-*` / `win32-*` their libraries in `output.addons.linux` / `output.addons.windows`. Each platform is linked with exactly the hosts you packed for it; there is no separate platform list to keep in sync.
 
-Each platform's addon output directory (`output.addons.<platform>`) is cleared before linking, so after a build it contains exactly the addons the header requires — point it at a directory dedicated to this output. After linking, the bundler cross-checks the produced artefacts against the header. An addon that `bare-link` could not produce (the package ships no prebuilds for the target hosts) fails the build, naming the package and hosts — that addon would otherwise crash the worklet the first time it is required on device.
+Each platform's addon output directory (`output.addons.<platform>`) is cleared before linking, so after a build it contains exactly the addons the header requires — point it at a directory dedicated to this output. After linking, the bundler cross-checks the produced artefacts against the header. An addon whose package ships prebuilds for the platform but that `bare-link` still could not produce fails the build, naming the package and hosts — that addon would otherwise crash the worklet the first time it is required on device. An addon with no prebuilds for any of the platform's hosts is skipped with a note instead: a pack that covers several platforms records every addon for all of them, including one the platform resolves to a JavaScript fallback and never loads (bare-posix on Android, for example).
 
 Linking needs the bundle, so `linkAddons` (CLI and programmatic API) runs after `generate` has produced it.
 

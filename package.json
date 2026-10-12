@@ -62,7 +62,7 @@
     "unrun": "0.3.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": "^22.21.0 || >=24.9.0"
   },
   "author": "Tether",
   "license": "Apache-2.0"

@@ -1,4 +1,4 @@
-import { isJavaScriptPath, minifyJson, stripModuleType, transformEsmToCjs } from '../../src/bundler/esm-to-cjs'
+import { isJavaScriptPath, stripModuleType, transformEsmToCjs } from '../../src/bundler/esm-to-cjs'
 
 type Factory = (module: { exports: Record<string, unknown> }, exports: Record<string, unknown>, require: (s: string) => unknown) => void
 
@@ -91,16 +91,6 @@ describe('esm-to-cjs transforms', () => {
 
     it('should throw on invalid JSON', () => {
       expect(() => stripModuleType('{ not json')).toThrow()
-    })
-  })
-
-  describe('minifyJson', () => {
-    it('should compact whitespace', () => {
-      expect(minifyJson('{\n  "a": [ 1, 2 ]\n}\n')).toBe('{"a":[1,2]}')
-    })
-
-    it('should return null for invalid JSON', () => {
-      expect(minifyJson('{ not json')).toBeNull()
     })
   })
 })

@@ -12,6 +12,12 @@ jest.mock('bare-link', () => mockLink)
 
 const IOS_HOSTS = ['ios-arm64', 'ios-arm64-simulator', 'ios-x64-simulator']
 const ANDROID_HOSTS = ['android-arm64', 'android-arm', 'android-ia32', 'android-x64']
+const ALL_HOSTS = [...IOS_HOSTS, ...ANDROID_HOSTS, 'darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64']
+
+/** Give an addon package the `prebuilds/<host>` directories bare-link reads. */
+function shipPrebuilds (dir: string, hosts: string[]): void {
+  for (const host of hosts) fs.mkdirSync(path.join(dir, 'prebuilds', host), { recursive: true })
+}
 
 /** bare-link yields the path of every resource it writes, one artefact per addon here. */
 function linkYielding (artefactsByDir: Record<string, string[]>): (dir: string, opts: { out: string }) => AsyncIterable<string> {
@@ -31,6 +37,8 @@ describe('linkAddons', () => {
     projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wdk-link-addons-'))
     bareFsDir = path.join(projectRoot, 'node_modules/bare-fs')
     sodiumDir = path.join(projectRoot, 'node_modules/sodium-native')
+    shipPrebuilds(bareFsDir, ALL_HOSTS)
+    shipPrebuilds(sodiumDir, ALL_HOSTS)
 
     const bundle = new Bundle()
     bundle.write('/node_modules/bare-fs/package.json', JSON.stringify({ name: 'bare-fs', version: '4.7.4', addon: true }))
@@ -101,8 +109,8 @@ describe('linkAddons', () => {
     expect(fs.existsSync(config.resolvedOutput.addons.android)).toBe(true)
   })
 
-  it('should fail when bare-link writes no artefact for an addon the header promises', async () => {
-    // Arrange: sodium-native ships no Android prebuilds in this tree
+  it('should fail when bare-link writes no artefact for an addon that ships prebuilds for the platform', async () => {
+    // Arrange: sodium-native has Android prebuilds, yet bare-link produces nothing from them
     config.options = { targets: ANDROID_HOSTS }
     mockLink.mockImplementation(linkYielding({
       [bareFsDir]: ['libbare-fs.4.7.4.so'],
@@ -117,14 +125,41 @@ describe('linkAddons', () => {
     expect(result.success).toBe(false)
     expect(result.error).toBe(
       'bare-link produced no artefact for addons the bundle requires; the worklet will fail to load them at runtime:\n' +
-      '    - android: sodium-native@5.1.0 (no prebuilds for hosts android-arm64, android-arm, android-ia32, android-x64)'
+      '    - android: sodium-native@5.1.0 (bare-link wrote no artefact for hosts android-arm64, android-arm, android-ia32, android-x64)'
     )
     expect(result.addons.map(a => a.name)).toEqual(['bare-fs', 'sodium-native'])
   })
 
+  it('should skip, without failing, an addon whose package ships no prebuilds for any host of the platform', async () => {
+    // Arrange: a mixed pack promised sodium-native for Android, but the package only ships Apple prebuilds
+    // (its exports map Android to a JavaScript fallback, so the runtime never asks for it there)
+    fs.rmSync(path.join(sodiumDir, 'prebuilds'), { recursive: true })
+    shipPrebuilds(sodiumDir, IOS_HOSTS)
+    config.options = { targets: [...IOS_HOSTS, ...ANDROID_HOSTS] }
+    mockLink.mockImplementation(linkYielding({
+      [bareFsDir]: ['libbare-fs.4.7.4.so', 'bare-fs.4.7.4.framework'],
+      [sodiumDir]: ['sodium-native.5.1.0.framework']
+    }))
+    const logs: string[] = []
+    const logSpy = jest.spyOn(console, 'log').mockImplementation((msg: string) => { logs.push(msg) })
+
+    // Act
+    const result = await linkAddons(config)
+    logSpy.mockRestore()
+
+    // Assert
+    expect(result.success).toBe(true)
+    expect(mockLink.mock.calls).toEqual([
+      [bareFsDir, { hosts: IOS_HOSTS, out: config.resolvedOutput.addons.ios }],
+      [sodiumDir, { hosts: IOS_HOSTS, out: config.resolvedOutput.addons.ios }],
+      [bareFsDir, { hosts: ANDROID_HOSTS, out: config.resolvedOutput.addons.android }]
+    ])
+    expect(logs).toContain('  Skipping sodium-native@5.1.0 for android: no prebuilds for hosts android-arm64, android-arm, android-ia32, android-x64')
+  })
+
   it('should check macOS output against the framework names promised for iOS', async () => {
     // Arrange: iOS and macOS frameworks share the <name>.<version>.framework basename;
-    // sodium-native ships no darwin prebuilds in this tree
+    // sodium-native has darwin prebuilds, yet bare-link produces nothing from them
     config.options = { targets: ['darwin-arm64', 'darwin-x64'] }
     mockLink.mockImplementation(linkYielding({
       [bareFsDir]: ['bare-fs.4.7.4.framework'],
@@ -142,7 +177,7 @@ describe('linkAddons', () => {
     expect(result.success).toBe(false)
     expect(result.error).toBe(
       'bare-link produced no artefact for addons the bundle requires; the worklet will fail to load them at runtime:\n' +
-      '    - macos: sodium-native@5.1.0 (no prebuilds for hosts darwin-arm64, darwin-x64)'
+      '    - macos: sodium-native@5.1.0 (bare-link wrote no artefact for hosts darwin-arm64, darwin-x64)'
     )
   })
 

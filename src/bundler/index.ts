@@ -225,7 +225,8 @@ export async function generateBundle (
           '  1. WDK modules are not installed in the project\n' +
           '  2. A dependency uses Node.js APIs not available in Bare runtime\n\n' +
           'Generated files are available at:\n' +
-          `  Entry: ${entryPath}`
+          `  Entry: ${entryPath}\n` +
+          'Fix the dependency and run generate again.'
       }
     }
 
@@ -240,10 +241,6 @@ export async function generateBundle (
 
     if (packed.esmToCjs !== null) {
       log(`  ESM→CJS: converted ${packed.esmToCjs.converted} JS files, patched ${packed.esmToCjs.packagesPatched} package.json files`)
-    } else if (isJsonRpc && packed.containsEsm) {
-      // JSC and QuickJS cannot load ES modules: this bundle aborts at boot on
-      // those engines. Not an error because V8 hosts load it fine.
-      log('  ⚠️  Bundle contains ES modules and options.convertEsmToCjs is off; it will not load on JavaScriptCore (iOS/macOS) or QuickJS targets. Set options.convertEsmToCjs: true unless every target runs V8.')
     }
 
     // Step 3: Write the bundle in the wrapper its extension calls for
