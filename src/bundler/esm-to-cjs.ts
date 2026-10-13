@@ -15,6 +15,8 @@ import { transformSync } from 'esbuild'
 export interface EsmToCjsTransformOptions {
   /** Minify the converted source. Defaults to true. */
   minify?: boolean
+  /** File name esbuild reports in its error messages. */
+  sourcefile?: string
 }
 
 /** Whether a module key or path names a JavaScript source file. */
@@ -27,11 +29,13 @@ export function isJavaScriptPath (filePath: string): boolean {
  * require/module.exports and dynamic `import()` is lowered to a
  * require-based shim, so no ESM construct survives on CJS-only engines.
  *
- * @throws {Error} If esbuild cannot parse the source.
+ * @throws {TransformFailure} If esbuild cannot convert the source; its message
+ *   names `sourcefile`, line and column.
  */
 export function transformEsmToCjs (source: string, options: EsmToCjsTransformOptions = {}): string {
-  const { minify = true } = options
+  const { minify = true, sourcefile } = options
   return transformSync(source, {
+    sourcefile,
     format: 'cjs',
     target: 'es2020',
     // format:'cjs' alone leaves dynamic import() untouched; marking it

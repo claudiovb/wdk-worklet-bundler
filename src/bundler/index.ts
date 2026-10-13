@@ -5,13 +5,14 @@
 
 import fs from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import type { ResolvedConfig } from '../config/types'
 import { shouldConvertEsmToCjs } from '../config/loader'
 import { generateEntryPoint } from '../generators/entry'
 import { generateJsonRpcEntryPoint } from '../generators/entry-jsonrpc'
 import { linkAddons } from './addons'
 import { linkPlatformsForHosts } from './linked-addons'
-import { MissingModuleError, packBundle, type EsmToCjsStats } from './pack'
+import { packBundle, type EsmToCjsStats } from './pack'
 import { writeBundleFile } from './bundle-file'
 import { validateDependencies, findMissingOptionalPeers } from '../validators/dependencies'
 import { getPackageList } from '../config/packages'
@@ -19,8 +20,8 @@ import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_OUTPUT_DIR, DEFAULT_ENTRY_FILENAME 
 
 export type { LinkAddonsOptions, LinkAddonsResult } from './addons'
 export { linkAddons } from './addons'
-export type { PackBundleOptions, PackBundleResult, EsmToCjsStats, ConditionalSpecifier } from './pack'
-export { packBundle, MissingModuleError } from './pack'
+export type { PackBundleOptions, PackBundleResult, BarePackOptions, EsmToCjsStats, ConditionalSpecifier } from './pack'
+export { packBundle } from './pack'
 
 export interface GenerateBundleOptions {
   dryRun?: boolean
@@ -41,8 +42,6 @@ export interface GenerateBundlePackInfo {
   files: number
   /** Addon hrefs in the header (`linked:` URLs the app must ship, `builtin:` ones the host embeds). */
   addons: string[]
-  /** Whether the bundle still carries ES modules (see PackBundleResult.containsEsm). */
-  containsEsm: boolean
   /** ESM→CJS conversion counters, or null when conversion was off. */
   esmToCjs: EsmToCjsStats | null
 }
@@ -191,27 +190,44 @@ export async function generateBundle (
     try {
       packed = await packBundle({
         entry: entryPath,
-        base: config.projectRoot,
-        hosts: targets,
-        linked: true,
-        defer: deferredPeers,
-        builtins: config.options?.builtins,
-        convertEsmToCjs
+        convertEsmToCjs,
+        packOptions: {
+          base: pathToFileURL(config.projectRoot).href,
+          hosts: targets,
+          linked: true,
+          defer: deferredPeers,
+          builtins: config.options?.builtins
+        }
       })
     } catch (packError) {
-      if (packError instanceof MissingModuleError) {
+      const errorMsg = packError instanceof Error ? packError.message : String(packError)
+
+      // bare-module-traverse's error carries the unresolved specifier; the
+      // CLI turns it into an install hint.
+      const { code, specifier, errors } = packError as { code?: string, specifier?: string, errors?: unknown }
+      if (code === 'MODULE_NOT_FOUND' && typeof specifier === 'string') {
         return {
           success: false,
           bundlePath: config.resolvedOutput.bundle,
           typesPath: config.resolvedOutput.types,
           bundleSize: 0,
           duration: Date.now() - startTime,
-          error: `Missing module: ${packError.missingModule}`,
-          missingModule: packError.missingModule
+          error: errorMsg,
+          missingModule: specifier
         }
       }
 
-      const errorMsg = packError instanceof Error ? packError.message : String(packError)
+      // esbuild's TransformFailure: a module could not be converted to CommonJS.
+      if (Array.isArray(errors)) {
+        return {
+          success: false,
+          bundlePath: config.resolvedOutput.bundle,
+          typesPath: config.resolvedOutput.types,
+          bundleSize: 0,
+          duration: Date.now() - startTime,
+          error: `ESM→CJS conversion failed: ${errorMsg}`
+        }
+      }
 
       return {
         success: false,
@@ -235,7 +251,6 @@ export async function generateBundle (
       hosts: packed.hosts,
       files: packed.files,
       addons: packed.addons,
-      containsEsm: packed.containsEsm,
       esmToCjs: packed.esmToCjs
     }
 

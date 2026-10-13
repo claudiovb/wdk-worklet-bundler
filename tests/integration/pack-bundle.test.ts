@@ -12,9 +12,10 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { pathToFileURL } from 'url'
 import type Bundle from 'bare-bundle'
 import { readBundle, writeBundleFile } from '../../src/bundler/bundle-file'
-import { MissingModuleError, packBundle } from '../../src/bundler/pack'
+import { packBundle } from '../../src/bundler/pack'
 import { discoverLinkedAddons } from '../../src/bundler/linked-addons'
 
 type ModuleFactory = (
@@ -73,6 +74,7 @@ describe('packBundle against the real bare-pack', () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdk-pack-bundle-'))
     projDir = path.join(tempDir, 'proj')
     entry = path.join(projDir, 'entry.js')
+    base = pathToFileURL(projDir).href
 
     // Fixture: CJS entry -> ESM package ("type": "module") -> dynamic import
     // of an .mjs file, plus a native addon package required directly.
@@ -104,11 +106,12 @@ describe('packBundle against the real bare-pack', () => {
   })
 
   const hosts = ['ios-arm64', 'android-arm64']
+  let base: string
 
   describe('with convertEsmToCjs on', () => {
     it('should pack a CJS-only bundle under .js keys that executes', async () => {
       // Act
-      const result = await packBundle({ entry, base: projDir, hosts, convertEsmToCjs: true })
+      const result = await packBundle({ entry, packOptions: { base, hosts, linked: true }, convertEsmToCjs: true })
 
       // Assert — keys, header, counters
       const keys = [...result.bundle.keys()]
@@ -116,7 +119,6 @@ describe('packBundle against the real bare-pack', () => {
       expect(keys.some(k => k.endsWith('.mjs'))).toBe(false)
       expect(JSON.parse(readFile(result.bundle, '/node_modules/esm-dep/package.json'))).not.toHaveProperty('type')
       expect(result.bundle.main).toBe('/entry.js')
-      expect(result.containsEsm).toBe(false)
       expect(result.esmToCjs).toEqual({ converted: 4, packagesPatched: 1 })
       expect(result.files).toBe(keys.length)
       expect(result.hosts).toEqual(hosts)
@@ -138,9 +140,9 @@ describe('packBundle against the real bare-pack', () => {
 
     it('should stamp a content-hash id that only changes with the content', async () => {
       // Act
-      const a = await packBundle({ entry, base: projDir, hosts, convertEsmToCjs: true })
-      const b = await packBundle({ entry, base: projDir, hosts, convertEsmToCjs: true })
-      const readable = await packBundle({ entry, base: projDir, hosts, convertEsmToCjs: true, minify: false })
+      const a = await packBundle({ entry, packOptions: { base, hosts, linked: true }, convertEsmToCjs: true })
+      const b = await packBundle({ entry, packOptions: { base, hosts, linked: true }, convertEsmToCjs: true })
+      const readable = await packBundle({ entry, packOptions: { base, hosts, linked: true }, convertEsmToCjs: true, minify: false })
 
       // Assert
       expect(a.id).toMatch(/^[0-9a-f]{64}$/)
@@ -151,15 +153,14 @@ describe('packBundle against the real bare-pack', () => {
   })
 
   describe('with convertEsmToCjs off', () => {
-    it('should keep ES modules verbatim and report containsEsm', async () => {
+    it('should keep ES modules verbatim', async () => {
       // Act
-      const result = await packBundle({ entry, base: projDir, hosts })
+      const result = await packBundle({ entry, packOptions: { base, hosts, linked: true } })
 
       // Assert
       expect([...result.bundle.keys()]).toContain('/node_modules/esm-dep/extra.mjs')
       expect(readFile(result.bundle, '/node_modules/esm-dep/extra.mjs')).toBe("export default 'extra-loaded'\n")
       expect((JSON.parse(readFile(result.bundle, '/node_modules/esm-dep/package.json')) as { type?: string }).type).toBe('module')
-      expect(result.containsEsm).toBe(true)
       expect(result.esmToCjs).toBeNull()
     })
   })
@@ -167,7 +168,7 @@ describe('packBundle against the real bare-pack', () => {
   describe('addon resolution', () => {
     it('should record linked: addon hrefs per host family by default', async () => {
       // Act
-      const result = await packBundle({ entry, base: projDir, hosts })
+      const result = await packBundle({ entry, packOptions: { base, hosts, linked: true } })
 
       // Assert
       expect(result.addons).toEqual([
@@ -179,7 +180,7 @@ describe('packBundle against the real bare-pack', () => {
 
     it('should resolve an addon listed in builtins to a builtin: href instead of linking it', async () => {
       // Act
-      const result = await packBundle({ entry, base: projDir, hosts, builtins: [{ addon: 'native-dep' }] })
+      const result = await packBundle({ entry, packOptions: { base, hosts, linked: true, builtins: [{ addon: 'native-dep' }] } })
 
       // Assert — the href carries the packed package's version: the host must embed that one
       expect(result.addons).toEqual(['builtin:native-dep@1.2.3'])
@@ -191,17 +192,20 @@ describe('packBundle against the real bare-pack', () => {
   })
 
   describe('resolution failures', () => {
-    it('should throw MissingModuleError naming the specifier for an unresolvable import', async () => {
+    it('should surface bare-pack\'s MODULE_NOT_FOUND error with the specifier and the importing module', async () => {
       // Arrange
       const broken = path.join(projDir, 'broken.js')
       fs.writeFileSync(broken, "require('not-installed-pkg')\n")
 
       // Act
-      const act = packBundle({ entry: broken, base: projDir, hosts })
+      const error = await packBundle({ entry: broken, packOptions: { base, hosts, linked: true } }).then(() => null, (e: unknown) => e as { code: string, specifier: string, referrer: URL, message: string })
 
       // Assert
-      await expect(act).rejects.toBeInstanceOf(MissingModuleError)
-      await expect(act).rejects.toMatchObject({ missingModule: 'not-installed-pkg' })
+      expect(error).not.toBeNull()
+      expect(error!.code).toBe('MODULE_NOT_FOUND')
+      expect(error!.specifier).toBe('not-installed-pkg')
+      expect(String(error!.referrer)).toBe(pathToFileURL(broken).href)
+      expect(error!.message).toContain("Cannot find module 'not-installed-pkg'")
     })
 
     it('should record a deferred specifier instead of failing', async () => {
@@ -210,11 +214,52 @@ describe('packBundle against the real bare-pack', () => {
       fs.writeFileSync(deferring, "module.exports = () => require('optional-peer')\n")
 
       // Act
-      const result = await packBundle({ entry: deferring, base: projDir, hosts, defer: ['optional-peer'] })
+      const result = await packBundle({ entry: deferring, packOptions: { base, hosts, linked: true, defer: ['optional-peer'] } })
 
       // Assert
       const resolutions = result.bundle.resolutions as Record<string, Record<string, string>>
       expect(resolutions['/deferring.js']['optional-peer']).toBe('deferred:optional-peer')
+    })
+  })
+
+  describe('conversion failures', () => {
+    const tlaDep = (): void => {
+      const dep = path.join(projDir, 'node_modules/tla-dep')
+      fs.mkdirSync(dep, { recursive: true })
+      fs.writeFileSync(path.join(dep, 'package.json'), JSON.stringify({ name: 'tla-dep', version: '1.0.0', type: 'module', main: 'index.js' }))
+      fs.writeFileSync(path.join(dep, 'index.js'), "export const ready = true\nawait Promise.resolve()\n")
+    }
+
+    it('should fail the pack with esbuild\'s error naming the file, line and cause', async () => {
+      // Arrange: top-level await has no CommonJS lowering for the es2020 target
+      tlaDep()
+      const tlaEntry = path.join(projDir, 'tla-entry.js')
+      fs.writeFileSync(tlaEntry, "module.exports = require('tla-dep')\n")
+
+      // Act
+      const act = packBundle({ entry: tlaEntry, packOptions: { base, hosts, linked: true }, convertEsmToCjs: true })
+
+      // Assert
+      await expect(act).rejects.toThrow(
+        `${path.join(projDir, 'node_modules/tla-dep/index.js')}:2:0: ERROR: Top-level await is not available in the configured target environment ("es2020" + 1 override)`
+      )
+    })
+
+    it('should report the conversion failure of a module before resolving its own imports', async () => {
+      // Arrange: the module both fails to convert and imports something that does not resolve
+      const dep = path.join(projDir, 'node_modules/tla-missing-dep')
+      fs.mkdirSync(dep, { recursive: true })
+      fs.writeFileSync(path.join(dep, 'package.json'), JSON.stringify({ name: 'tla-missing-dep', version: '1.0.0', type: 'module', main: 'index.js' }))
+      fs.writeFileSync(path.join(dep, 'index.js'), "import 'not-installed-anywhere'\nawait Promise.resolve()\nexport const x = 1\n")
+      const bothEntry = path.join(projDir, 'tla-and-missing.js')
+      fs.writeFileSync(bothEntry, "module.exports = require('tla-missing-dep')\n")
+
+      // Act
+      const act = packBundle({ entry: bothEntry, packOptions: { base, hosts, linked: true }, convertEsmToCjs: true })
+
+      // Assert
+      await expect(act).rejects.toThrow(/tla-missing-dep\/index\.js:2:0: ERROR: Top-level await/)
+      await expect(act).rejects.not.toMatchObject({ code: 'MODULE_NOT_FOUND' })
     })
   })
 
@@ -229,7 +274,7 @@ describe('packBundle against the real bare-pack', () => {
 
     it.each(cases)('should write $outName in the wrapper bare-pack uses for that extension and read it back', async ({ outName, expectedPrefix }) => {
       // Arrange
-      const { bundle } = await packBundle({ entry, base: projDir, hosts, convertEsmToCjs: true })
+      const { bundle } = await packBundle({ entry, packOptions: { base, hosts, linked: true }, convertEsmToCjs: true })
       const out = path.join(projDir, 'out', outName)
 
       // Act

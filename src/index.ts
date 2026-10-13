@@ -19,8 +19,8 @@ export { discoverLinkedAddons } from './bundler/linked-addons'
 export type { LinkedAddon } from './bundler/linked-addons'
 export { readBundle, writeBundleFile, wrapperForPath } from './bundler/bundle-file'
 export type { BundleWrapper } from './bundler/bundle-file'
-export { packBundle, MissingModuleError } from './bundler/pack'
-export type { PackBundleOptions, PackBundleResult, EsmToCjsStats, ConditionalSpecifier } from './bundler/pack'
+export { packBundle } from './bundler/pack'
+export type { PackBundleOptions, PackBundleResult, BarePackOptions, EsmToCjsStats, ConditionalSpecifier } from './bundler/pack'
 
 // Generators
 export { generateEntryPoint } from './generators/entry'

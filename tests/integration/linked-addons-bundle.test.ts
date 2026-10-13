@@ -10,6 +10,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { pathToFileURL } from 'url'
 import { readBundle, writeBundleFile } from '../../src/bundler/bundle-file'
 import { discoverLinkedAddons } from '../../src/bundler/linked-addons'
 import { packBundle } from '../../src/bundler/pack'
@@ -48,7 +49,7 @@ describe('discoverLinkedAddons against real bare-pack output', () => {
 
   const pack = async (outName: string, hosts: string[]): Promise<string> => {
     const out = path.join(projDir, outName)
-    const { bundle } = await packBundle({ entry: path.join(projDir, 'entry.js'), base: projDir, hosts })
+    const { bundle } = await packBundle({ entry: path.join(projDir, 'entry.js'), packOptions: { base: pathToFileURL(projDir).href, hosts, linked: true } })
     writeBundleFile(out, bundle)
     return out
   }
