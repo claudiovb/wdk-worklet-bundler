@@ -163,6 +163,28 @@ describe('discoverLinkedAddons', () => {
     expect(addons).toEqual([])
   })
 
+  it('should skip builtin: hrefs, which the host runtime embeds, and keep the linked: ones', () => {
+    // Arrange: bare-crypto was listed in options.builtins, sodium-native was not
+    const bundle = packBundle([
+      { key: '/node_modules/bare-crypto/package.json', name: 'bare-crypto', version: '1.15.3', addon: true },
+      { key: '/node_modules/sodium-native/package.json', name: 'sodium-native', version: '5.1.0', addon: true }
+    ], [
+      'builtin:bare-crypto@1.15.3',
+      'linked:libsodium-native.5.1.0.so'
+    ])
+
+    // Act
+    const addons = discoverLinkedAddons(bundle, PROJECT_ROOT)
+
+    // Assert
+    expect(addons).toEqual([{
+      name: 'sodium-native',
+      version: '5.1.0',
+      dir: path.join(PROJECT_ROOT, 'node_modules/sodium-native'),
+      artefacts: [{ name: 'libsodium-native.5.1.0.so', family: 'elf' }]
+    }])
+  })
+
   it('should throw when the header names an addon whose package.json was not packed', () => {
     // Arrange
     const bundle = packBundle([

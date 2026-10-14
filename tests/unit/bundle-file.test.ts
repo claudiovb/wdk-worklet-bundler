@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import Bundle from 'bare-bundle'
 import { createBundle, wrapBundle } from '../helpers/bundle'
-import { unwrapBundle, rewrapBundle, readBundle, type BundleWrapper } from '../../src/bundler/bundle-file'
+import { unwrapBundle, rewrapBundle, readBundle, wrapperForPath, writeBundleFile, type BundleWrapper } from '../../src/bundler/bundle-file'
 
 /** Content is irrelevant here: these tests are about bytes, not conversion. */
 const RAW_BUNDLE = createBundle({
@@ -37,6 +37,55 @@ describe('bundle-file', () => {
       // Assert
       expect(result).toEqual({ wrapper: null, bundle: RAW_BUNDLE })
       expect(result.bundle).toBe(RAW_BUNDLE)
+    })
+  })
+
+  describe('wrapperForPath', () => {
+    it.each([
+      { outputPath: '/out/wdk-worklet.bundle', wrapper: null },
+      { outputPath: '/out/wdk-worklet.mobile.bundle', wrapper: null },
+      { outputPath: '/out/wdk-worklet', wrapper: null },
+      { outputPath: '/out/wdk-worklet.bundle.js', wrapper: 'cjs' },
+      { outputPath: '/out/wdk-worklet.bundle.cjs', wrapper: 'cjs' },
+      { outputPath: '/out/wdk-worklet.bundle.mjs', wrapper: 'mjs' },
+      { outputPath: '/out/wdk-worklet.bundle.json', wrapper: 'json' },
+      { outputPath: '/out/wdk-worklet.js', wrapper: null }
+    ])('should pick $wrapper for $outputPath, as the bare-pack CLI does', ({ outputPath, wrapper }) => {
+      expect(wrapperForPath(outputPath)).toBe(wrapper)
+    })
+  })
+
+  describe('writeBundleFile', () => {
+    let tempDir: string
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdk-write-bundle-'))
+    })
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    })
+
+    it.each([
+      { ext: 'bundle', kind: null },
+      { ext: 'bundle.js', kind: 'cjs' as const },
+      { ext: 'bundle.mjs', kind: 'mjs' as const },
+      { ext: 'bundle.json', kind: 'json' as const }
+    ])('should write a .$ext output in its wrapper, creating the directory, and return the bytes', ({ ext, kind }) => {
+      // Arrange
+      const bundle = new Bundle()
+      bundle.write('/index.js', 'module.exports = 1', { main: true })
+      const outputPath = path.join(tempDir, 'nested', `app.${ext}`)
+      const raw = Buffer.from(bundle.toBuffer())
+
+      // Act
+      const written = writeBundleFile(outputPath, bundle)
+
+      // Assert
+      const expected = kind === null ? raw : wrapBundle(kind, raw)
+      expect(written).toEqual(expected)
+      expect(fs.readFileSync(outputPath)).toEqual(expected)
+      expect([...readBundle(outputPath).keys()]).toEqual(['/index.js'])
     })
   })
 

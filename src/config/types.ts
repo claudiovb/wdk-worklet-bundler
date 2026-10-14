@@ -2,6 +2,8 @@
  * Configuration types for wdk-worklet-bundler
  */
 
+import type { ConditionalSpecifier } from '../bundler/pack'
+
 export interface ProtocolAllowedMethods {
   /** Methods allowed on this protocol surface. Omit to leave unrestricted. */
   methods?: string[]
@@ -109,12 +111,17 @@ export interface WdkBundleConfig {
     linkAddons?: boolean
     /** Xcode target name used in the generated addons.yml. Defaults to 'app'. */
     swiftTarget?: string
-    /** Convert ESM to CJS in the bundle. Required for engines whose Bare port
+    /** Convert ESM to CJS while packing. Required for engines whose Bare port
      *  can't load ES modules (e.g. JSC on iOS/macOS, QuickJS on Android);
      *  leave off when every target runs an ESM-capable engine (V8).
-     *  Also controls the runtime .mjs-as-CJS loader patch in the generated entry.
-     * Defaults to false. */
+     *  Defaults to false. */
     convertEsmToCjs?: boolean
+    /** Modules and addons the host runtime embeds (bare-pack `builtins`).
+     *  Matching specifiers resolve to `builtin:` URLs served by the host
+     *  instead of being packed or linked, e.g. `[{ addon: 'bare-fs' }]` for
+     *  an addon compiled into bare-kit. Must match the host build the app
+     *  ships. Defaults to none. */
+    builtins?: ConditionalSpecifier[]
     /** Enables pear-wrk-wdk's handle-leak diagnostic (registerHandleLeakCheck),
      *  which repeatedly walks and logs active handles while the worklet is
      *  suspended, to help identify what's keeping the event loop from

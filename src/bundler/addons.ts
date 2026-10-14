@@ -6,6 +6,7 @@
 
 import fs from 'fs'
 import path from 'path'
+import type Bundle from 'bare-bundle'
 import type { ResolvedConfig } from '../config/types'
 import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_SWIFT_TARGET } from '../constants'
 import { generateAddonsYml } from '../generators/addons-yml'
@@ -15,6 +16,8 @@ import { discoverLinkedAddons, findMissingArtefacts, hostsForPlatform, linkPlatf
 export interface LinkAddonsOptions {
   verbose?: boolean
   silent?: boolean
+  /** The packed bundle, when the caller still has it in memory; otherwise it is read from `resolvedOutput.bundle`. */
+  bundle?: Bundle
 }
 
 export interface LinkAddonsResult {
@@ -31,8 +34,8 @@ type BareLink = (modulePath: string, opts: { hosts: string[], out: string }) => 
 
 /**
  * Link the native addons the packed bundle requires using bare-link. The
- * addon set is read from the bundle header written by `bare-pack --linked`,
- * so the bundle must exist before linking. The platforms to link for are
+ * addon set comes from the bundle header written by packing with `linked`
+ * resolution — the in-memory bundle when provided, else the file on disk. The platforms to link for are
  * derived from the hosts the bundle was packed for (`options.targets`):
  * `ios-*` → iOS, `darwin-*` → macOS, `android-*` → Android, each linked with
  * exactly the hosts of its family. Generates the artefacts consumers embed
@@ -44,10 +47,14 @@ type BareLink = (modulePath: string, opts: { hosts: string[], out: string }) => 
  * otherwise ship forever. The directory must be dedicated to this output.
  *
  * Fails, after linking everything it can, when bare-link produced no
- * artefact for an addon the header promises — that addon would crash the
- * worklet at runtime as soon as it is required. Also fails without touching
- * the filesystem when a packed host is of a family the bundler cannot link
- * for, or when an addon output directory contains the project root.
+ * artefact for an addon whose package ships prebuilds for the platform —
+ * that addon would crash the worklet at runtime as soon as it is required.
+ * An addon with no prebuilds for any of the platform's hosts is skipped with
+ * a note instead: a pack covering several platforms promises it for all of
+ * them although the platform resolves it to a JavaScript fallback. Also
+ * fails without touching the filesystem when a packed host is of a family
+ * the bundler cannot link for, or when an addon output directory contains
+ * the project root.
  */
 export async function linkAddons (
   config: ResolvedConfig,
@@ -67,7 +74,8 @@ export async function linkAddons (
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const link = require('bare-link') as BareLink
 
-    addons = discoverLinkedAddons(readBundle(config.resolvedOutput.bundle), config.projectRoot)
+    const bundle = options.bundle ?? readBundle(config.resolvedOutput.bundle)
+    addons = discoverLinkedAddons(bundle, config.projectRoot)
     log(`  Discovered ${addons.length} native addons from bundle header`)
     if (verbose) for (const addon of addons) log(`    ${addon.name}@${addon.version}`)
 
@@ -84,8 +92,19 @@ export async function linkAddons (
       }
       fs.mkdirSync(outputPath, { recursive: true })
 
+      // A multi-host pack promises every addon for every host, even one the
+      // platform never loads (its package maps the platform to a JS fallback
+      // and ships no prebuilds for it). Nothing can be linked for those, and
+      // the runtime never asks for them, so they are skipped rather than
+      // counted as gaps.
+      const linkable = addons.filter(addon => {
+        if (packageShipsPrebuilds(addon.dir, platformHosts)) return true
+        log(`  Skipping ${addon.name}@${addon.version} for ${platform}: no prebuilds for hosts ${platformHosts.join(', ')}`)
+        return false
+      })
+
       const written = new Set<string>()
-      for (const addon of addons) {
+      for (const addon of linkable) {
         if (verbose) log(`    Linking ${addon.name}...`)
 
         // bare-link is an async generator yielding the path of each resource it writes
@@ -94,8 +113,8 @@ export async function linkAddons (
         }
       }
 
-      for (const addon of findMissingArtefacts(addons, platform, written)) {
-        gaps.push(`${platform}: ${addon.name}@${addon.version} (no prebuilds for hosts ${platformHosts.join(', ')})`)
+      for (const addon of findMissingArtefacts(linkable, platform, written)) {
+        gaps.push(`${platform}: ${addon.name}@${addon.version} (bare-link wrote no artefact for hosts ${platformHosts.join(', ')})`)
       }
 
       log(`  ✓ ${platform} addons → ${outputPath}`)
@@ -131,6 +150,11 @@ export async function linkAddons (
       error: error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+/** Whether an addon package ships a prebuild directory for at least one of the hosts. */
+function packageShipsPrebuilds (addonDir: string, hosts: string[]): boolean {
+  return hosts.some(host => fs.existsSync(path.join(addonDir, 'prebuilds', host)))
 }
 
 /**

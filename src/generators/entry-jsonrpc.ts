@@ -5,7 +5,6 @@ import { generateWalletModulesCode } from './wallet-modules'
 import { generateProtocolModulesCode } from './protocol-modules'
 import { generateModuleModulesCode } from './module-modules'
 import { DEFAULT_ENTRY_FILENAME } from '../constants'
-import { generateMjsAsCjsPatch } from './mjs-as-cjs-patch'
 import { generateLifecycleCode } from './lifecycle'
 
 export async function generateJsonRpcEntryPoint (config: ResolvedConfig, outputDir: string): Promise<string> {
@@ -21,7 +20,6 @@ export async function generateJsonRpcEntryPoint (config: ResolvedConfig, outputD
 
 // Polyfills for JSC (TextEncoder, process, etc.) - must be first
 require('bare-node-runtime/global')
-${generateMjsAsCjsPatch(config)}
 const {
   registerJsonRpcHandlers,
   utils: { logger }

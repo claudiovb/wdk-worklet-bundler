@@ -5,7 +5,6 @@ import { generateWalletModulesCode } from './wallet-modules'
 import { generateProtocolModulesCode } from './protocol-modules'
 import { generateModuleModulesCode } from './module-modules'
 import { DEFAULT_ENTRY_FILENAME } from '../constants'
-import { generateMjsAsCjsPatch } from './mjs-as-cjs-patch'
 import { generateHandleLeakCheckCode } from './handle-leak-check'
 import { generateLifecycleCode } from './lifecycle'
 
@@ -21,7 +20,6 @@ export async function generateEntryPoint (config: ResolvedConfig, outputDir: str
 // DO NOT EDIT MANUALLY
 
 require('bare-node-runtime/global');
-${generateMjsAsCjsPatch(config)}
 // Handle unhandled promise rejections and exceptions
 if (typeof Bare !== 'undefined' && Bare.on) {
   Bare.on('unhandledRejection', (error) => {

@@ -119,7 +119,12 @@ export const configSchema = {
         },
         linkAddons: { type: 'boolean', description: 'Link native addons via bare-link' },
         swiftTarget: { type: 'string', description: 'Xcode target name used in addons.yml' },
-        convertEsmToCjs: { type: 'boolean', description: 'Convert ESM to CJS in bundle (for engines without ESM support in Bare, e.g. JSC, QuickJS). Defaults to false.' },
+        convertEsmToCjs: { type: 'boolean', description: 'Convert ESM to CJS while packing (for engines without ESM support in Bare, e.g. JSC, QuickJS). Defaults to false.' },
+        builtins: {
+          type: 'array',
+          items: { anyOf: [{ type: 'string' }, { type: 'array' }, { type: 'object' }] },
+          description: 'Modules and addons the host runtime embeds (bare-pack builtins); matching specifiers resolve to builtin: URLs instead of being packed or linked.'
+        },
         handleLeakCheck: {
           oneOf: [
             { const: true },
