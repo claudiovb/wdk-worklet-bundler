@@ -7,10 +7,11 @@
 import { Command } from 'commander'
 import fs from 'fs'
 import path from 'path'
-import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR, JSONRPC_TRANSPORT_REMOVED, RUNTIME_OVERRIDE_PACKAGE, RUNTIME_OVERRIDE_SPEC } from './constants'
+import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR, RUNTIME_OVERRIDE_PACKAGE, RUNTIME_OVERRIDE_SPEC } from './constants'
 import { printBanner } from './utils/banner'
 import { getPackageList } from './config/packages'
 import { linkPlatformsForHosts } from './bundler/linked-addons'
+import type { WdkBundleConfig } from './config/types'
 import pkg from '../package.json'
 
 interface GenerateOptions {
@@ -59,7 +60,7 @@ program
   .option('--no-types', 'Skip TypeScript declaration generation')
   .option('--source-only', 'Only generate source files (skip bare-pack)')
   .option('--skip-generation', 'Skip artifact generation and use existing files')
-  .option('--transport <transport>', 'Transport type: hrpc (default)')
+  .option('--transport <transport>', 'Transport: bare-rpc or hrpc (replaces the value of the config file)')
   .option('--link-addons', 'Link native addons via bare-link')
   .option('--skip-link-addons', 'Skip bare-link addon linking')
   .option('--no-defer-optional-peers', 'Fail on missing optional peer deps (e.g. Ledger support) instead of deferring them to runtime')
@@ -109,21 +110,9 @@ program
 
     try {
       console.log('\n🔍 Reading configuration...\n')
-      let config = await loadConfig(options.config)
+      // --transport replaces the config file's value and is validated with it
+      let config = await loadConfig(options.config, { transport: options.transport as WdkBundleConfig['transport'] })
       console.log(`  Config: ${config.configPath}`)
-
-      // Apply CLI transport override
-      if (options.transport) {
-        if (options.transport === 'jsonrpc') {
-          console.error(`\n❌ Invalid transport: ${JSONRPC_TRANSPORT_REMOVED}`)
-          process.exit(1)
-        }
-        if (options.transport !== 'hrpc') {
-          console.error(`\n❌ Invalid transport '${options.transport}'. Use 'hrpc'`)
-          process.exit(1)
-        }
-        config = { ...config, transport: options.transport }
-      }
 
       // Apply CLI addon overrides
       if (options.linkAddons || options.skipLinkAddons) {
@@ -370,7 +359,7 @@ program
     fs.writeFileSync(configPath, configContent)
 
     console.log('\n✅ Created wdk.config.js\n')
-    console.log('  Edit the file to configure your networks and modules.\n')
+    console.log('  Edit the file to set the language and configure your networks and modules.\n')
   })
 
 program
@@ -498,6 +487,13 @@ function generateConfigTemplate (
  */
 
 module.exports = {
+  // Transport the worklet serves: 'bare-rpc' or 'hrpc'
+  transport: 'bare-rpc',
+
+  // Required: language of the generated host package, 'swift' or 'kotlin'
+  // (kotlin also needs kotlinPackage, e.g. 'to.tether.wdk.worklet')
+  // language: '',
+
   // Network mappings
   // Map logical network names to WDK wallet packages
   networks: {

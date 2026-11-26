@@ -70,6 +70,15 @@ describe('CLI Integration Tests', () => {
       expect(content).toContain('@tetherto/wdk')
     })
 
+    it('should create a config that only lacks the language, which has no default', () => {
+      runCli('init -y')
+
+      const output = runCli('validate')
+
+      expect(output).toContain("Validation failed: Invalid configuration:\n  - root: must have required property 'language'\n")
+      expect(output).not.toContain('Config file valid')
+    })
+
     it('should warn if config already exists', () => {
       runCli('init -y')
       const output = runCli('init')
@@ -89,6 +98,8 @@ describe('CLI Integration Tests', () => {
     it('should validate valid config', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -111,6 +122,8 @@ module.exports = {
     it('should fail on missing dependencies', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -128,6 +141,8 @@ module.exports = {
     it('should fail on invalid config', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {},
 };
 `
@@ -153,6 +168,8 @@ module.exports = {
     it('should produce a bundle containing configured modules', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
   modules: {
     addressBook: {
@@ -207,6 +224,8 @@ exports.utils = { logger: { info: () => {}, error: () => {} } };
     it('should fail when dependencies are missing', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -224,6 +243,8 @@ module.exports = {
     it('should attempt install with --install flag', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -244,6 +265,8 @@ module.exports = {
     it('should write the runtime override into package.json before installing with npm', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: './local-wdk-module',
@@ -274,6 +297,8 @@ module.exports = {
     it('should warn about local paths that cannot be auto-installed', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: './local-wdk-module',
@@ -293,6 +318,8 @@ module.exports = {
     it('should show dry run output', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -316,6 +343,8 @@ module.exports = {
     it('should derive the addon platforms from the configured targets', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -342,6 +371,8 @@ module.exports = {
     it('should reject the removed --platforms flag', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -360,6 +391,8 @@ module.exports = {
     it('should reject a config that still carries options.platforms', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -382,6 +415,7 @@ module.exports = {
       const config = `
 module.exports = {
   transport: 'jsonrpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -400,6 +434,8 @@ module.exports = {
     it('should reject --transport jsonrpc and point to the LTS line', () => {
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
@@ -411,8 +447,69 @@ module.exports = {
 
       const output = runCli('generate --dry-run --transport jsonrpc')
 
-      expect(output).toContain("Invalid transport: the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.")
+      expect(output).toContain("/transport: the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.")
       expect(output).not.toContain('Checking core dependencies')
+    })
+
+    it('should reject an unknown --transport and name the allowed values', () => {
+      const config = `
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+
+      const output = runCli('generate --dry-run --transport grpc')
+
+      expect(output).toContain('/transport: must be equal to one of the allowed values: bare-rpc, hrpc')
+      expect(output).not.toContain('Checking core dependencies')
+    })
+
+    it('should fail when neither the config nor --transport gives a transport', () => {
+      const config = `
+module.exports = {
+  language: 'swift',
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+
+      const output = runCli('generate --dry-run')
+
+      expect(output).toContain("root: must have required property 'transport'")
+      expect(output).not.toContain('Checking core dependencies')
+    })
+
+    it('should take the transport from --transport when the config has none', () => {
+      const config = `
+module.exports = {
+  language: 'swift',
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+      mockPackage('@tetherto/wdk-wallet-evm-erc-4337')
+      mockPackage('@tetherto/wdk')
+      mockPackage('bare-wdk-runtime')
+      mockPackage('@tetherto/pear-wrk-wdk')
+
+      const output = runCli('generate --dry-run --transport hrpc')
+
+      expect(output).toContain('Dry run - would generate (transport: hrpc):')
     })
   })
 
@@ -423,6 +520,8 @@ module.exports = {
 
       const config = `
 module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
   networks: {
     ethereum: {
       package: '@tetherto/wdk-wallet-evm-erc-4337',

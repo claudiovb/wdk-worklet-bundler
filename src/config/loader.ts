@@ -56,15 +56,27 @@ async function loadConfigFile (filepath: string): Promise<WdkBundleConfig> {
  * generators, so the runtime `.mjs` loader patch emitted into the entry
  * always matches what was actually done to the bundle.
  *
- * Opt-in and independent of transport and platform: enable it whenever any
- * target engine's Bare port can't load ESM (JSC, QuickJS), leave it off for
- * ESM-capable engines (V8).
+ * Independent of transport and platform. The default follows the engine: off
+ * for V8, which loads ESM, and on for the engines whose Bare port can't (JSC,
+ * QuickJS).
  */
 export function shouldConvertEsmToCjs (config: WdkBundleConfig): boolean {
-  return config.options?.convertEsmToCjs ?? false
+  return config.options?.convertEsmToCjs ?? (config.options?.engine ?? 'v8') !== 'v8'
 }
 
-export async function loadConfig (configPath?: string): Promise<ResolvedConfig> {
+/** Values given on the command line that replace the config file's. */
+export type ConfigOverrides = Partial<Pick<WdkBundleConfig, 'transport'>>
+
+/**
+ * Load, validate and resolve the config file.
+ *
+ * @param configPath - Path of the config file. Defaults to the wdk.config.*
+ *   file of the current directory.
+ * @param overrides - Values that replace the config file's before validation.
+ * @throws {Error} If the file is missing, is not valid JSON, or the config,
+ *   with the overrides applied, is invalid.
+ */
+export async function loadConfig (configPath?: string, overrides: ConfigOverrides = {}): Promise<ResolvedConfig> {
   const cwd = process.cwd()
 
   // Find config file
@@ -87,7 +99,10 @@ export async function loadConfig (configPath?: string): Promise<ResolvedConfig> 
   }
 
   // Load config
-  const config = await loadConfigFile(filepath)
+  const config: WdkBundleConfig = {
+    ...await loadConfigFile(filepath),
+    ...(overrides.transport !== undefined ? { transport: overrides.transport } : {})
+  }
 
   // Validate config
   validateConfig(config)

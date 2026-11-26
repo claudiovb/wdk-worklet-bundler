@@ -35,6 +35,8 @@ describe('hrpc lifecycle', () => {
     logger: { info: jest.Mock, error: jest.Mock }
   }> {
     const config: ResolvedConfig = {
+      transport: 'bare-rpc',
+      language: 'swift',
       networks: {},
       configPath: path.join(dir, 'wdk.config.js'),
       projectRoot: dir,

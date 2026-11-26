@@ -56,6 +56,8 @@ describe('linkAddons', () => {
     config = {
       configPath: path.join(projectRoot, 'wdk.config.js'),
       projectRoot,
+      transport: 'bare-rpc',
+      language: 'swift',
       networks: {},
       options: { targets: [...IOS_HOSTS, ...ANDROID_HOSTS] },
       resolvedOutput: {

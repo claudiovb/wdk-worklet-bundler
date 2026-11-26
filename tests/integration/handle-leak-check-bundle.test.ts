@@ -37,6 +37,8 @@ describe('generateHandleLeakCheckCode against real bare-pack output', () => {
   let projDir: string
 
   const createMockConfig = (overrides?: Partial<ResolvedConfig>): ResolvedConfig => ({
+    transport: 'bare-rpc',
+    language: 'swift',
     networks: {},
     protocols: {},
     configPath: path.join(projDir, 'wdk.config.js'),

@@ -8,6 +8,8 @@ import type { ResolvedConfig } from '../../src/config/types'
 
 describe('Code Generators', () => {
   const createMockConfig = (overrides?: Partial<ResolvedConfig>): ResolvedConfig => ({
+    transport: 'bare-rpc',
+    language: 'swift',
     networks: {
       ethereum: {
         package: '@tetherto/wdk-wallet-evm-erc-4337'

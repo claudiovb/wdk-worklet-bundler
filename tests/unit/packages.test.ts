@@ -2,7 +2,7 @@ import { getPackageList } from '../../src/config/packages'
 import type { WdkBundleConfig } from '../../src/config/types'
 
 const makeConfig = (overrides: Partial<WdkBundleConfig> = {}): WdkBundleConfig =>
-  ({ networks: {}, ...overrides })
+  ({ transport: 'bare-rpc', language: 'swift', networks: {}, ...overrides })
 
 describe('getPackageList', () => {
   it('always includes the core packages and the Pear Worklet runtime', () => {
@@ -16,7 +16,7 @@ describe('getPackageList', () => {
   })
 
   it('includes the Pear Worklet runtime regardless of transport', () => {
-    for (const transport of ['hrpc'] as const) {
+    for (const transport of ['bare-rpc', 'hrpc'] as const) {
       expect(getPackageList(makeConfig({ transport }))).toContain('@tetherto/pear-wrk-wdk')
     }
   })

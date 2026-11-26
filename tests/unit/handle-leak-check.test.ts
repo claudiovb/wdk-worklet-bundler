@@ -8,6 +8,8 @@ describe('generateHandleLeakCheckCode', () => {
   let tempDir: string
 
   const createMockConfig = (overrides?: Partial<ResolvedConfig>): ResolvedConfig => ({
+    transport: 'bare-rpc',
+    language: 'swift',
     networks: {},
     protocols: {},
     configPath: '/test/wdk.config.js',

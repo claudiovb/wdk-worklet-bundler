@@ -9,7 +9,7 @@ import { JSONRPC_TRANSPORT_REMOVED } from '../constants'
 export const configSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
-  required: ['networks'],
+  required: ['networks', 'transport', 'language'],
   definitions: {
     protocolAllowedMethods: {
       type: 'object',
@@ -87,8 +87,23 @@ export const configSchema = {
     },
     transport: {
       type: 'string',
-      enum: ['hrpc'],
-      description: 'Transport mechanism for worklet communication'
+      enum: ['bare-rpc', 'hrpc'],
+      description: 'Transport the worklet serves'
+    },
+    language: {
+      type: 'string',
+      enum: ['swift', 'kotlin'],
+      description: 'Language of the generated host package'
+    },
+    kotlinPackage: {
+      type: 'string',
+      minLength: 1,
+      description: "Kotlin package of the generated code, e.g. 'to.tether.wdk.worklet' (kotlin only)"
+    },
+    target: {
+      type: 'string',
+      enum: ['bare-kit'],
+      description: 'bare-stow target the bundle is packed for. Defaults to bare-kit.'
     },
     output: {
       type: 'object',
@@ -120,7 +135,15 @@ export const configSchema = {
         },
         linkAddons: { type: 'boolean', description: 'Link native addons via bare-link' },
         swiftTarget: { type: 'string', description: 'Xcode target name used in addons.yml' },
-        convertEsmToCjs: { type: 'boolean', description: 'Convert ESM to CJS while packing (for engines without ESM support in Bare, e.g. JSC, QuickJS). Defaults to false.' },
+        convertEsmToCjs: { type: 'boolean', description: 'Convert ESM to CJS while packing (for engines without ESM support in Bare, e.g. JSC, QuickJS). Defaults to false with v8 and to true with the other engines.' },
+        engine: {
+          type: 'string',
+          enum: ['v8', 'javascriptcore', 'quickjs'],
+          description: 'JavaScript engine of the Bare Kit build the app ships. javascriptcore (swift only) and quickjs (kotlin only) are experimental. Defaults to v8.'
+        },
+        maxFrameSize: { type: 'integer', minimum: 1, description: 'Largest frame the worklet accepts over bare-rpc, in bytes. Defaults to 16 MiB.' },
+        maxBufferedBytes: { type: 'integer', minimum: 1, description: 'Most bytes a bare-rpc stream of the worklet may buffer. Defaults to 16 MiB.' },
+        debug: { type: 'boolean', description: 'Add stack traces to the errors the worklet returns. Not for production builds. Defaults to false.' },
         builtins: {
           type: 'array',
           items: { anyOf: [{ type: 'string' }, { type: 'array' }, { type: 'object' }] },
@@ -150,7 +173,8 @@ export function validateConfigSchema (config: unknown): asserts config is WdkBun
   if (!valid && (validate.errors != null)) {
     const errors = validate.errors.map((e) => {
       const path = e.instancePath || 'root'
-      return `  - ${path}: ${e.message}`
+      const allowed = e.keyword === 'enum' ? `: ${(e.params.allowedValues as string[]).join(', ')}` : ''
+      return `  - ${path}: ${e.message}${allowed}`
     })
     throw new Error(`Invalid configuration:\n${errors.join('\n')}`)
   }
@@ -163,6 +187,7 @@ export function validateConfig (config: unknown): asserts config is WdkBundleCon
   rejectJsonRpcTransport(config)
   validateConfigSchema(config)
   rejectRemovedPlatformsOption(config)
+  rejectInvalidCombinations(config)
 }
 
 /**
@@ -191,5 +216,44 @@ function rejectRemovedPlatformsOption (config: WdkBundleConfig): void {
       'Invalid configuration:\n  - /options/platforms: this option was removed. ' +
       'Addon platforms are derived from options.targets (ios-* → ios, darwin-* → macos, android-* → android); remove the key.'
     )
+  }
+}
+
+/**
+ * The rules that span several keys: what each language, transport and engine
+ * can be combined with. All violations are reported together.
+ *
+ * @throws {Error} If the config combines options that cannot work together.
+ */
+function rejectInvalidCombinations (config: WdkBundleConfig): void {
+  const { language, transport, kotlinPackage, options = {} } = config
+  const errors: string[] = []
+
+  if (language === 'kotlin' && kotlinPackage === undefined) {
+    errors.push("/kotlinPackage: required with language 'kotlin': the Kotlin package of the generated code, for example 'to.tether.wdk.worklet'.")
+  }
+  if (language === 'swift' && kotlinPackage !== undefined) {
+    errors.push("/kotlinPackage: only valid with language 'kotlin'.")
+  }
+  if (language === 'kotlin' && transport === 'hrpc') {
+    errors.push("/transport: 'hrpc' is not available with language 'kotlin', because there is no HRPC library for Kotlin. Use 'bare-rpc'.")
+  }
+  if (options.engine === 'javascriptcore' && language !== 'swift') {
+    errors.push("/options/engine: 'javascriptcore' is only available with language 'swift'.")
+  }
+  if (options.engine === 'quickjs' && language !== 'kotlin') {
+    errors.push("/options/engine: 'quickjs' is only available with language 'kotlin'.")
+  }
+  if (options.engine === 'javascriptcore' && options.convertEsmToCjs === false) {
+    errors.push("/options/convertEsmToCjs: must not be false with engine 'javascriptcore': one ES module in the bundle aborts the process when the worklet starts.")
+  }
+  for (const limit of ['maxFrameSize', 'maxBufferedBytes'] as const) {
+    if (transport === 'hrpc' && options[limit] !== undefined) {
+      errors.push(`/options/${limit}: only valid with transport 'bare-rpc'.`)
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Invalid configuration:\n${errors.map((e) => `  - ${e}`).join('\n')}`)
   }
 }
