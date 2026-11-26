@@ -26,7 +26,7 @@ function canRequireHandleLeakCheck (projectRoot: string): boolean {
  * after a suspend, and repeatedly dumps active handles while it's suspended
  * (see pear-wrk-wdk's registerHandleLeakCheck). Opt-in via
  * wdk.config.js's options.handleLeakCheck - omitted entirely (no require
- * emitted) unless set, so bare-pack never pulls bare-walk-handles into a
+ * emitted) unless set, so bare-stow never pulls bare-walk-handles into a
  * bundle that doesn't ask for it.
  */
 export function generateHandleLeakCheckCode (config: ResolvedConfig): string {

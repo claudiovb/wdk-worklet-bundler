@@ -2,6 +2,7 @@ import { execSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { listFiles, readBundleFile, readStowedBundle, writeFixtureFile, writeStandInWdkProject } from '../helpers/stow-fixture'
 
 const CLI_PATH = path.resolve(__dirname, '../../dist/cli.js')
 
@@ -39,16 +40,6 @@ describe('CLI Integration Tests', () => {
       path.join(pkgPath, 'package.json'),
       JSON.stringify({ name, version: '1.0.0' })
     )
-  }
-
-  const mockPackageFiles = (name: string, files: Record<string, string>): void => {
-    mockPackage(name)
-    const pkgPath = path.join(tempDir, 'node_modules', name)
-    for (const [filename, source] of Object.entries(files)) {
-      const filepath = path.join(pkgPath, filename)
-      fs.mkdirSync(path.dirname(filepath), { recursive: true })
-      fs.writeFileSync(filepath, source)
-    }
   }
 
   describe('init command', () => {
@@ -165,8 +156,19 @@ module.exports = {
       expect(output).toContain('No wdk.config.js found')
     })
 
-    it('should produce a bundle containing configured modules', () => {
-      const config = `
+    describe('with every package installed', () => {
+      const ADDRESS_BOOK_SOURCE = 'exports.createWorkletModule = (ctx) => ({ ctx, list: () => [] })\n'
+
+      const writeProject = (config: string): void => {
+        fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+        writeStandInWdkProject(tempDir)
+        writeFixtureFile(tempDir, 'node_modules/@tetherto/wdk-p2p-address-book/package.json',
+          JSON.stringify({ name: '@tetherto/wdk-p2p-address-book', version: '0.0.0', main: 'index.js' }))
+        writeFixtureFile(tempDir, 'node_modules/@tetherto/wdk-p2p-address-book/index.js', ADDRESS_BOOK_SOURCE)
+      }
+
+      it('should write the Swift package, with the configured modules in its bundle', () => {
+        writeProject(`
 module.exports = {
   transport: 'bare-rpc',
   language: 'swift',
@@ -179,45 +181,76 @@ module.exports = {
     },
   },
   allowedModuleMethods: { addressBook: { methods: ['list'] } },
-  output: { bundle: './out/wdk.bundle' },
+  output: './out/wallet-worklet',
+  options: { targets: ['ios-arm64'] },
 };
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+`)
 
-      mockPackageFiles('@tetherto/wdk', {
-        'index.js': 'module.exports = class WDK {}\n'
-      })
-      mockPackageFiles('bare-wdk-runtime', {
-        'global.js': 'module.exports = {}\n',
-        'imports.json': '{}\n'
-      })
-      mockPackageFiles('@tetherto/wdk-wallet-evm', {
-        'index.js': 'module.exports = class WalletManager {}\n'
-      })
-      mockPackageFiles('@tetherto/wdk-p2p-address-book', {
-        'index.js': 'exports.createWorkletModule = (ctx) => ({ ctx, list: () => [] })\n'
-      })
-      mockPackageFiles('@tetherto/pear-wrk-wdk', {
-        'worklet.js': `
-exports.createStart = () => () => {};
-exports.utils = { logger: { info: () => {}, error: () => {} } };
-`
+        // The fixture project has no bare-stow of its own: packing goes through
+        // the JS API resolved from the bundler's install, as with a file: dependency.
+        const output = runCli('generate --keep-artifacts')
+        const entry = fs.readFileSync(path.join(tempDir, '.wdk', 'wdk-worklet.generated.js'), 'utf-8')
+        const packageDir = path.join(tempDir, 'out', 'wallet-worklet')
+
+        expect(output).toContain('Package generated successfully')
+        expect(output).toContain('(swift, bare-rpc, 4 files)')
+        expect(entry).toContain("require('@tetherto/wdk-p2p-address-book'")
+        expect(entry).toContain("moduleManagers['addressBook'] = {")
+        expect(entry).toContain('moduleManagers: typeof moduleManagers')
+        expect(entry).toContain('allowedModuleMethods: {"addressBook":{"methods":["list"]}}')
+        expect(listFiles(packageDir)).toEqual([
+          '.wdk-worklet-bundler',
+          'Package.swift',
+          'Sources/WalletWorklet/Client.swift',
+          'Sources/WalletWorklet/Harness.swift',
+          'Sources/WalletWorklet/index.bundle'
+        ])
+        const bundle = readStowedBundle(path.join(packageDir, 'Sources/WalletWorklet/index.bundle'))
+        expect(readBundleFile(bundle, '/node_modules/@tetherto/wdk-p2p-address-book/index.js')).toBe(ADDRESS_BOOK_SOURCE)
+        expect([...bundle.keys()]).toContain('/.wdk/wdk-worklet.generated.js')
       })
 
-      // The fixture project has no bare-pack of its own: packing goes through
-      // the JS API resolved from the bundler's install, as with a file: dependency.
-      const output = runCli('generate --skip-link-addons --keep-artifacts --no-types')
-      const entry = fs.readFileSync(path.join(tempDir, '.wdk', 'wdk-worklet.generated.js'), 'utf-8')
-      const bundlePath = path.join(tempDir, 'out', 'wdk.bundle')
+      it('should write the Kotlin module into the default output folder and remove the intermediate files', () => {
+        writeProject(`
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'kotlin',
+  networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
+  options: { targets: ['android-arm64'] },
+};
+`)
 
-      expect(output).toContain('Bundle generated successfully')
-      expect(entry).toContain("require('@tetherto/wdk-p2p-address-book'")
-      expect(entry).toContain("moduleManagers['addressBook'] = {")
-      expect(entry).toContain('moduleManagers: typeof moduleManagers')
-      expect(entry).toContain('allowedModuleMethods: {"addressBook":{"methods":["list"]}}')
-      expect(fs.existsSync(bundlePath)).toBe(true)
-      expect(fs.statSync(bundlePath).size).toBeGreaterThan(0)
-      expect(fs.readFileSync(bundlePath).includes(Buffer.from('addressBook'))).toBe(true)
+        const output = runCli('generate')
+
+        expect(output).toContain('Package generated successfully')
+        expect(output).toContain('(kotlin, bare-rpc, 4 files)')
+        expect(listFiles(path.join(tempDir, 'wdk-worklet'))).toEqual([
+          '.wdk-worklet-bundler',
+          'build.gradle',
+          'src/main/assets/to/tether/wdk/worklet/index.bundle',
+          'src/main/kotlin/to/tether/wdk/worklet/Client.kt',
+          'src/main/kotlin/to/tether/wdk/worklet/Harness.kt'
+        ])
+        expect(fs.existsSync(path.join(tempDir, '.wdk'))).toBe(false)
+      })
+
+      it('should fail with what is wrong when the installed pear-wrk-wdk is not the RC line', () => {
+        writeProject(`
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
+  networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
+  options: { targets: ['ios-arm64'] },
+};
+`)
+        writeFixtureFile(tempDir, 'node_modules/@tetherto/pear-wrk-wdk/index.js', 'exports.HRPC = class HRPC {}\n')
+
+        const output = runCli('generate')
+
+        expect(output).toContain('Package generation failed')
+        expect(output).toContain('does not export createServerProvider, so it cannot serve a bare-stow bundle. Install the RC line of the package (dist-tag `next`).')
+        expect(fs.existsSync(path.join(tempDir, 'wdk-worklet'))).toBe(false)
+      })
     })
 
     it('should fail when dependencies are missing', () => {
@@ -335,11 +368,15 @@ module.exports = {
 
       const output = runCli('generate --dry-run')
 
-      expect(output).toContain('Dry run')
+      expect(output).toContain('Dry run - would generate (transport: bare-rpc, language: swift):')
       expect(output).toContain('.wdk/wdk-worklet.generated.js')
+      expect(output).toContain(`Package: ${path.join(fs.realpathSync(tempDir), 'wdk-worklet')}`)
+      expect(output).not.toContain('Package generated successfully')
+      expect(fs.existsSync(path.join(tempDir, 'wdk-worklet'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, '.wdk'))).toBe(false)
     })
 
-    it('should derive the addon platforms from the configured targets', () => {
+    it.each(['--link-addons', '--skip-link-addons', '--no-types'])('should reject the removed %s flag', (flag) => {
       const config = `
 module.exports = {
   transport: 'bare-rpc',
@@ -349,22 +386,35 @@ module.exports = {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
     },
   },
-  options: {
-    targets: ['ios-arm64', 'android-arm64'],
-  },
 };
 `
       fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-      mockPackage('@tetherto/wdk-wallet-evm-erc-4337')
-      mockPackage('@tetherto/wdk')
-      mockPackage('bare-wdk-runtime')
-      mockPackage('@tetherto/pear-wrk-wdk')
 
-      const output = runCli('generate --dry-run --link-addons')
+      const output = runCli(`generate ${flag}`)
 
-      expect(output).toContain('Addons (ios)')
-      expect(output).toContain('Addons (android)')
-      expect(output).not.toContain('Addons (macos)')
+      expect(output).toContain(`unknown option '${flag}'`)
+      expect(output).not.toContain('Checking core dependencies')
+    })
+
+    it('should reject a config that still gives output as an object of paths', () => {
+      const config = `
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+  output: { bundle: './out/wdk.bundle' },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+
+      const output = runCli('generate --dry-run')
+
+      expect(output).toContain("/output: is now one folder, the generated package (a string, default './wdk-worklet').")
+      expect(output).not.toContain('Checking core dependencies')
     })
 
     it('should reject the removed --platforms flag', () => {
@@ -508,7 +558,7 @@ module.exports = {
 
       const output = runCli('generate --dry-run --transport hrpc')
 
-      expect(output).toContain('Dry run - would generate (transport: hrpc):')
+      expect(output).toContain('Dry run - would generate (transport: hrpc, language: swift):')
     })
   })
 

@@ -81,4 +81,20 @@ describe('loadConfig', () => {
       "Invalid configuration:\n  - /transport: 'hrpc' is not available with language 'kotlin', because there is no HRPC library for Kotlin. Use 'bare-rpc'."
     )
   })
+
+  it('should resolve the default output folder next to the config file', async () => {
+    const configPath = writeConfig({ transport: 'bare-rpc', language: 'swift', networks: { eth: { package: 'pkg' } } })
+
+    const config = await loadConfig(configPath)
+
+    expect(config.outputDir).toBe(path.join(tempDir, 'wdk-worklet'))
+  })
+
+  it('should resolve the output folder of the file relative to the config file', async () => {
+    const configPath = writeConfig({ transport: 'bare-rpc', language: 'swift', networks: { eth: { package: 'pkg' } }, output: './generated/WalletWorklet' })
+
+    const config = await loadConfig(configPath)
+
+    expect(config.outputDir).toBe(path.join(tempDir, 'generated', 'WalletWorklet'))
+  })
 })

@@ -9,10 +9,16 @@ import fs from 'fs'
 import path from 'path'
 import { createRequire } from 'module'
 import { fileURLToPath, pathToFileURL } from 'url'
-import type { EsmToCjsStats } from './pack'
 import { isJavaScriptPath, stripModuleType, transformEsmToCjs } from './esm-to-cjs'
 
 const PEAR_WRK_WDK = '@tetherto/pear-wrk-wdk'
+
+export interface EsmToCjsStats {
+  /** JavaScript modules rewritten to CommonJS. */
+  converted: number
+  /** package.json files that lost `"type": "module"`. */
+  packagesPatched: number
+}
 
 /** The language of the host package, with the options bare-stow takes for it. */
 export type StowLanguage =

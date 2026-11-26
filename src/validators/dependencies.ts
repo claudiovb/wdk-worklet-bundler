@@ -292,7 +292,7 @@ export function scanPeerDependencies (
           // Peers explicitly marked optional via peerDependenciesMeta are
           // only needed for opt-in features (e.g. Ledger hardware signing
           // in @bitcoinerlab/descriptors) — never report them as missing,
-          // but track them so bare-pack can defer their resolution.
+          // but track them so bare-stow can defer their resolution.
           if (isOptional) {
             // skipOptional: caller only wants .missing — don't trigger the
             // node_modules walk or collect deferral candidates.

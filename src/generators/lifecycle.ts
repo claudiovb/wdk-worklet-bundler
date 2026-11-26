@@ -15,7 +15,7 @@ function runLifecycle (resource, method) {
 function runHttpLifecycle (method) {
   // Bare's public require.cache contains the modules the wallet HTTP stack
   // actually loaded, including nested package versions and lazy imports.
-  // Reading it adds no HTTP dependency to bare-pack's static module graph.
+  // Reading it adds no HTTP dependency to the static module graph bare-stow packs.
   const seen = new Set()
   for (const [url, loaded] of Object.entries(require.cache)) {
     if (!url.endsWith('/bare-http1/index.js') && !url.endsWith('/bare-https/index.js')) continue

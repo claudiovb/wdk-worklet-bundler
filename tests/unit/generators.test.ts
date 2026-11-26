@@ -22,18 +22,7 @@ describe('Code Generators', () => {
     protocols: {},
     configPath: '/test/wdk.config.js',
     projectRoot: '/test',
-    resolvedOutput: {
-      bundle: '/test/.wdk/wdk.bundle.js',
-      types: '/test/.wdk/wdk.d.ts',
-      addons: {
-        ios: '/test/ios/addons',
-        macos: '/test/macos/addons',
-        android: '/test/android/addons',
-        linux: '/test/linux/addons',
-        windows: '/test/windows/addons'
-      },
-      addonsYml: '/test/addons.yml'
-    },
+    outputDir: '/test/wdk-worklet',
     ...overrides
   })
 

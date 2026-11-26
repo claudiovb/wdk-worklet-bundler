@@ -7,10 +7,9 @@
 import { Command } from 'commander'
 import fs from 'fs'
 import path from 'path'
-import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR, RUNTIME_OVERRIDE_PACKAGE, RUNTIME_OVERRIDE_SPEC } from './constants'
+import { DEFAULT_OUTPUT_DIR, DEFAULT_PACKAGE_PATH, RUNTIME_OVERRIDE_PACKAGE, RUNTIME_OVERRIDE_SPEC } from './constants'
 import { printBanner } from './utils/banner'
 import { getPackageList } from './config/packages'
-import { linkPlatformsForHosts } from './bundler/linked-addons'
 import type { WdkBundleConfig } from './config/types'
 import pkg from '../package.json'
 
@@ -20,12 +19,9 @@ interface GenerateOptions {
   keepArtifacts?: boolean
   dryRun?: boolean
   verbose?: boolean
-  types?: boolean
   sourceOnly?: boolean
   skipGeneration?: boolean
   transport?: string
-  linkAddons?: boolean
-  skipLinkAddons?: boolean
   deferOptionalPeers?: boolean
 }
 
@@ -47,22 +43,19 @@ interface CleanOptions {
 
 const program = new Command()
 
-program.name('wdk-worklet-bundler').description('CLI tool for generating WDK worklet bundles').version(pkg.version)
+program.name('wdk-worklet-bundler').description('CLI tool for generating WDK worklet packages').version(pkg.version)
 
 program
   .command('generate')
-  .description('Generate WDK bundle from configuration')
+  .description('Generate the WDK worklet package from configuration')
   .option('-c, --config <path>', 'Path to config file')
   .option('--install', 'Auto-install missing dependencies')
   .option('--keep-artifacts', 'Keep intermediate generated files (useful for debugging)')
   .option('--dry-run', 'Show what would be generated without building')
   .option('-v, --verbose', 'Show verbose output')
-  .option('--no-types', 'Skip TypeScript declaration generation')
-  .option('--source-only', 'Only generate source files (skip bare-pack)')
+  .option('--source-only', 'Only generate source files (skip packing)')
   .option('--skip-generation', 'Skip artifact generation and use existing files')
   .option('--transport <transport>', 'Transport: bare-rpc or hrpc (replaces the value of the config file)')
-  .option('--link-addons', 'Link native addons via bare-link')
-  .option('--skip-link-addons', 'Skip bare-link addon linking')
   .option('--no-defer-optional-peers', 'Fail on missing optional peer deps (e.g. Ledger support) instead of deferring them to runtime')
   .action(async (options: GenerateOptions) => {
     const { loadConfig } = await import('./config/loader')
@@ -111,20 +104,8 @@ program
     try {
       console.log('\n🔍 Reading configuration...\n')
       // --transport replaces the config file's value and is validated with it
-      let config = await loadConfig(options.config, { transport: options.transport as WdkBundleConfig['transport'] })
+      const config = await loadConfig(options.config, { transport: options.transport as WdkBundleConfig['transport'] })
       console.log(`  Config: ${config.configPath}`)
-
-      // Apply CLI addon overrides
-      if (options.linkAddons || options.skipLinkAddons) {
-        config = {
-          ...config,
-          options: {
-            ...config.options,
-            ...(options.linkAddons ? { linkAddons: true } : {}),
-            ...(options.skipLinkAddons ? { linkAddons: false } : {})
-          }
-        }
-      }
 
       console.log('\n📦 Checking core dependencies...\n')
       const requiredPackages = getPackageList(config)
@@ -250,16 +231,15 @@ program
 
         console.log('\n✅ Source files generated successfully!\n')
         console.log(`  Entry: ${result.entryPath}`)
-        console.log('Run bare-pack manually to create the final bundle.\n')
+        console.log('Run generate without --source-only to pack it.\n')
         return
       }
 
-      console.log('\n🔧 Building bundle...\n')
+      console.log('\n🔧 Building package...\n')
 
       const result = await generateBundle(config, {
         dryRun: options.dryRun,
         verbose: options.verbose,
-        skipTypes: !options.types,
         skipGeneration: options.skipGeneration,
         deferOptionalPeers: options.deferOptionalPeers
       })
@@ -280,29 +260,20 @@ program
           process.exit(1)
         }
 
-        console.log('\n❌ Bundle generation failed:\n')
+        console.log('\n❌ Package generation failed:\n')
         console.log(result.error)
         process.exit(1)
       }
 
+      // A dry run wrote nothing: there is no package to report or clean up.
+      if (options.dryRun) return
+
       const sizeKB = (result.bundleSize / 1024).toFixed(1)
       const duration = (result.duration / 1000).toFixed(2)
 
-      console.log('\n✅ Bundle generated successfully!\n')
+      console.log('\n✅ Package generated successfully!\n')
+      console.log(`  Package: ${result.outputDir} (${config.language}, ${config.transport}, ${result.files.length} files)`)
       console.log(`  Bundle: ${result.bundlePath} (${sizeKB} KB)`)
-      if (options.types !== false) {
-        console.log(`  Types: ${result.typesPath}`)
-      }
-      const shouldLinkAddons = config.options?.linkAddons ?? false
-      if (shouldLinkAddons) {
-        const platforms = linkPlatformsForHosts(config.options?.targets ?? DEFAULT_BUNDLE_BUILD_HOSTS)
-        for (const p of platforms) {
-          console.log(`  Addons (${p}): ${config.resolvedOutput.addons[p]}`)
-        }
-        if (platforms.includes('ios')) {
-          console.log(`  addons.yml: ${config.resolvedOutput.addonsYml}`)
-        }
-      }
       console.log(`  Duration: ${duration}s\n`)
 
       // Cleanup intermediate files unless --keep-artifacts is set
@@ -310,22 +281,11 @@ program
         if (options.verbose) console.log('Cleaning up intermediate files...\n')
         const generatedDir = path.join(config.projectRoot, DEFAULT_OUTPUT_DIR)
 
-        // User-facing files that must survive cleanup — these are the
-        // documented import surface (`import { bundle } from './.wdk'`).
-        const KEEP = new Set(['index.js'])
-        if (options.types !== false) KEEP.add('index.d.ts')
-
-        if (fs.existsSync(generatedDir)) {
-          for (const entry of fs.readdirSync(generatedDir, { withFileTypes: true })) {
-            if (KEEP.has(entry.name)) continue
-            const entryPath = path.join(generatedDir, entry.name)
-            try {
-              fs.rmSync(entryPath, { recursive: true, force: true })
-              if (options.verbose) console.log(`  ✓ Removed ${entryPath}\n`)
-            } catch (e) {
-              console.log(`  ⚠️  Failed to cleanup ${entryPath}: ${String(e)}\n`)
-            }
-          }
+        try {
+          fs.rmSync(generatedDir, { recursive: true, force: true })
+          if (options.verbose) console.log(`  ✓ Removed ${generatedDir}\n`)
+        } catch (e) {
+          console.log(`  ⚠️  Failed to cleanup ${generatedDir}: ${String(e)}\n`)
         }
       } else {
         console.log(`ℹ️  Keeping intermediate files in ${DEFAULT_OUTPUT_DIR}\n`)
@@ -491,8 +451,10 @@ module.exports = {
   transport: 'bare-rpc',
 
   // Required: language of the generated host package, 'swift' or 'kotlin'
-  // (kotlin also needs kotlinPackage, e.g. 'to.tether.wdk.worklet')
   // language: '',
+
+  // Kotlin package of the generated code (kotlin only)
+  // kotlinPackage: 'to.tether.wdk.worklet',
 
   // Network mappings
   // Map logical network names to WDK wallet packages
@@ -500,17 +462,16 @@ module.exports = {
 ${networksStr}
   },
 
-${preloadStr}  // Output paths (optional, defaults shown)
-  output: {
-    bundle: '${DEFAULT_BUNDLE_PATH}',
-    types: '${DEFAULT_TYPES_PATH}'
-  },
+${preloadStr}  // Folder of the generated package (optional, default shown).
+  // The Swift module is named after it: wdk-worklet → WdkWorklet
+  output: '${DEFAULT_PACKAGE_PATH}',
 
   // Build options (optional)
   options: {
-    // minify: false,
-    // sourceMaps: false,
-    targets: ${JSON.stringify(DEFAULT_BUNDLE_BUILD_HOSTS)}
+    // Hosts to build for. Default: every host of the language
+    // targets: ['ios-arm64', 'ios-arm64-simulator'],
+    // Experimental: 'javascriptcore' (swift) or 'quickjs' (kotlin)
+    // engine: 'v8',
   }
 };
 `

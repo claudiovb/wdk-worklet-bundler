@@ -30,12 +30,7 @@ describe('generateHandleLeakCheckCode against real bare-stow output', () => {
     protocols: {},
     configPath: path.join(projDir, 'wdk.config.js'),
     projectRoot: projDir,
-    resolvedOutput: {
-      bundle: path.join(projDir, '.wdk/wdk.bundle.js'),
-      types: path.join(projDir, '.wdk/wdk.d.ts'),
-      addons: { ios: '', macos: '', android: '', linux: '', windows: '' },
-      addonsYml: ''
-    },
+    outputDir: path.join(projDir, 'wdk-worklet'),
     ...overrides
   })
 

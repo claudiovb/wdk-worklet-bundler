@@ -19,14 +19,10 @@ describe('Config Schema Validation', () => {
           }
         },
         preloadModules: ['native-addon'],
-        output: {
-          bundle: './dist/bundle.js',
-          types: './dist/types.d.ts'
-        },
+        output: './generated/wdk-worklet',
         options: {
           minify: true,
-          sourceMaps: true,
-          targets: ['android-arm64']
+          targets: ['ios-arm64']
         }
       }
 
@@ -190,22 +186,56 @@ describe('Config Schema Validation', () => {
       expect(() => validateConfig(config)).toThrow('must be array')
     })
 
-    it('should validate options.builtins with string and conditional entries', () => {
+    it.each([
+      ['sourceMaps', true, 'Nothing ever produced source maps; remove the key.'],
+      ['linkAddons', false, 'The native addons are always linked into the generated package; remove the key.'],
+      ['swiftTarget', 'app', 'There is no addons.yml any more: the generated Swift package declares its addons; remove the key.'],
+      ['builtins', [{ addon: 'bare-fs' }], 'bare-stow links every addon the bundle uses into the generated package; remove the key.']
+    ])('should reject the removed options.%s key with the migration message', (option, value, migration) => {
       const config = {
         ...REQUIRED,
         networks: { eth: { package: 'pkg' } },
-        options: { builtins: ['bare-os', { addon: 'bare-fs' }, ['bare-url']] }
+        options: { [option]: value }
       }
-      expect(() => validateConfig(config)).not.toThrow()
+
+      expect(() => validateConfig(config)).toThrow(`Invalid configuration:\n  - /options/${option}: this option was removed. ${migration}`)
     })
 
-    it('should fail if options.builtins is not an array', () => {
+    it('should report every removed option of a config together', () => {
       const config = {
         ...REQUIRED,
         networks: { eth: { package: 'pkg' } },
-        options: { builtins: 'bare-fs' }
+        options: { sourceMaps: false, linkAddons: true }
       }
-      expect(() => validateConfig(config)).toThrow('Invalid configuration')
+
+      expect(() => validateConfig(config)).toThrow(
+        'Invalid configuration:\n' +
+        '  - /options/sourceMaps: this option was removed. Nothing ever produced source maps; remove the key.\n' +
+        '  - /options/linkAddons: this option was removed. The native addons are always linked into the generated package; remove the key.'
+      )
+    })
+
+    it('should reject the removed object form of output with the migration message', () => {
+      const config = {
+        ...REQUIRED,
+        networks: { eth: { package: 'pkg' } },
+        output: { bundle: './dist/bundle.js' }
+      }
+
+      expect(() => validateConfig(config)).toThrow(
+        "Invalid configuration:\n  - /output: is now one folder, the generated package (a string, default './wdk-worklet'). " +
+        'The bundle and the native addons are written inside it, so output.bundle, output.types, output.addons and output.addonsYml were removed.'
+      )
+    })
+
+    it('should fail if output is not a string', () => {
+      const config = {
+        ...REQUIRED,
+        networks: { eth: { package: 'pkg' } },
+        output: 42
+      }
+
+      expect(() => validateConfig(config)).toThrow('Invalid configuration:\n  - /output: must be string')
     })
 
     it('should validate options.handleLeakCheck set to true', () => {
@@ -313,18 +343,16 @@ describe('Config Schema Validation', () => {
         expect(() => validateConfig(config)).not.toThrow()
       })
 
-      it('should fail if kotlin has no Kotlin package', () => {
+      it('should validate kotlin without a Kotlin package, which has a default', () => {
         const config = { networks, transport: 'bare-rpc', language: 'kotlin' }
 
-        expect(() => validateConfig(config)).toThrow(
-          "Invalid configuration:\n  - /kotlinPackage: required with language 'kotlin': the Kotlin package of the generated code, for example 'to.tether.wdk.worklet'."
-        )
+        expect(() => validateConfig(config)).not.toThrow()
       })
 
-      it('should fail if swift is given a Kotlin package', () => {
+      it('should validate swift with a Kotlin package, which it does not use', () => {
         const config = { networks, transport: 'bare-rpc', language: 'swift', kotlinPackage: 'to.tether.wdk.worklet' }
 
-        expect(() => validateConfig(config)).toThrow("Invalid configuration:\n  - /kotlinPackage: only valid with language 'kotlin'.")
+        expect(() => validateConfig(config)).not.toThrow()
       })
 
       it('should fail if kotlin is combined with hrpc', () => {
@@ -444,7 +472,6 @@ describe('Config Schema Validation', () => {
 
       expect(() => validateConfig(config)).toThrow(
         'Invalid configuration:\n' +
-        "  - /kotlinPackage: required with language 'kotlin': the Kotlin package of the generated code, for example 'to.tether.wdk.worklet'.\n" +
         "  - /transport: 'hrpc' is not available with language 'kotlin', because there is no HRPC library for Kotlin. Use 'bare-rpc'.\n" +
         "  - /options/engine: 'javascriptcore' is only available with language 'swift'.\n" +
         "  - /options/maxFrameSize: only valid with transport 'bare-rpc'."

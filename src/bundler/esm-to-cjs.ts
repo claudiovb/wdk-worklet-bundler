@@ -1,10 +1,10 @@
 /**
- * ESM→CJS source transforms applied inflight while bare-pack traverses the
- * module graph (see pack.ts), for engines whose Bare port can't load ES
+ * ESM→CJS source transforms applied inflight while bare-stow traverses the
+ * module graph (see stow.ts), for engines whose Bare port can't load ES
  * modules: JSC on iOS/macOS exposes no ESM through Apple's public C API, and
  * QuickJS on Bare rejects dynamic `import()`. V8 loads either form.
  *
- * Because the transform runs inside bare-pack's `readModule`, resolution
+ * Because the transform runs inside bare-stow's `readModule`, resolution
  * still happens against the original package manifests under `require`
  * conditions, so packages that ship a CJS build resolve to it and only the
  * ESM-only remainder is machine-converted here.

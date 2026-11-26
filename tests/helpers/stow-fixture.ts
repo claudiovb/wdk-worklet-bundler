@@ -9,6 +9,14 @@ export function writeFixtureFile (projDir: string, file: string, source: string)
   fs.writeFileSync(filePath, source)
 }
 
+/** Every file under a folder, as sorted paths relative to it with forward slashes. */
+export function listFiles (dir: string): string[] {
+  return (fs.readdirSync(dir, { recursive: true }) as string[])
+    .filter((file) => fs.statSync(path.join(dir, file)).isFile())
+    .map((file) => file.split(path.sep).join('/'))
+    .sort()
+}
+
 /**
  * Give a fixture project the two packages every stowed bundle needs, as
  * stand-ins that need no install:
@@ -52,4 +60,31 @@ export function readStowedBundle (bundlePath: string): Bundle {
 /** The source of one file of a bundle. */
 export function readBundleFile (bundle: Bundle, key: string): string {
   return (bundle.read(key) as unknown as Buffer).toString()
+}
+
+/**
+ * Give a fixture project everything a generated entry requires, as stand-ins:
+ * the two packages of writeStandInPackages, plus the WDK core, the runtime, the
+ * `/worklet` entry of pear-wrk-wdk and one wallet package,
+ * `@tetherto/wdk-wallet-evm`. Enough for `generate` to pack; nothing runs.
+ */
+export function writeStandInWdkProject (projDir: string): void {
+  writeStandInPackages(projDir)
+
+  writeFixtureFile(projDir, 'node_modules/@tetherto/pear-wrk-wdk/worklet.js',
+    'exports.createStart = () => () => {}\n' +
+    'exports.utils = { logger: { info: () => {}, error: () => {} } }\n')
+
+  writeFixtureFile(projDir, 'node_modules/@tetherto/wdk/package.json',
+    JSON.stringify({ name: '@tetherto/wdk', version: '0.0.0', main: 'index.js' }))
+  writeFixtureFile(projDir, 'node_modules/@tetherto/wdk/index.js', 'module.exports = class WDK {}\n')
+
+  writeFixtureFile(projDir, 'node_modules/bare-wdk-runtime/package.json',
+    JSON.stringify({ name: 'bare-wdk-runtime', version: '0.0.0' }))
+  writeFixtureFile(projDir, 'node_modules/bare-wdk-runtime/global.js', 'module.exports = {}\n')
+  writeFixtureFile(projDir, 'node_modules/bare-wdk-runtime/imports.json', '{}\n')
+
+  writeFixtureFile(projDir, 'node_modules/@tetherto/wdk-wallet-evm/package.json',
+    JSON.stringify({ name: '@tetherto/wdk-wallet-evm', version: '0.0.0', main: 'index.js' }))
+  writeFixtureFile(projDir, 'node_modules/@tetherto/wdk-wallet-evm/index.js', 'module.exports = class WalletManager {}\n')
 }

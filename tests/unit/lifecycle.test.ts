@@ -40,12 +40,7 @@ describe('entry lifecycle', () => {
       networks: {},
       configPath: path.join(dir, 'wdk.config.js'),
       projectRoot: dir,
-      resolvedOutput: {
-        bundle: path.join(dir, 'bundle.js'),
-        types: path.join(dir, 'types.d.ts'),
-        addons: { ios: '', macos: '', android: '', linux: '', windows: '' },
-        addonsYml: path.join(dir, 'addons.yml')
-      }
+      outputDir: path.join(dir, 'wdk-worklet')
     }
     const entry = await generateEntryPoint(config, dir)
     const bare = new EventEmitter()

@@ -2,8 +2,6 @@
  * Configuration types for wdk-worklet-bundler
  */
 
-import type { ConditionalSpecifier } from '../bundler/pack'
-
 export interface ProtocolAllowedMethods {
   /** Methods allowed on this protocol surface. Omit to leave unrestricted. */
   methods?: string[]
@@ -90,39 +88,28 @@ export interface WdkBundleConfig {
   /** Language of the generated host package. */
   language: 'swift' | 'kotlin'
 
-  /** Kotlin package of the generated code, e.g. 'to.tether.wdk.worklet'. It is
-   *  also the namespace of the generated module. Required with 'kotlin',
-   *  rejected with 'swift'. */
+  /** Kotlin package of the generated code, which is also the namespace of the
+   *  generated module. Defaults to 'to.tether.wdk.worklet'. Not used with
+   *  'swift'. */
   kotlinPackage?: string
 
   /** bare-stow target the bundle is packed for. Defaults to 'bare-kit'. */
   target?: 'bare-kit'
 
-  /** Output paths */
-  output?: {
-    bundle?: string
-    types?: string
-    /** Output directories for bare-link native addons, per platform */
-    addons?: {
-      ios?: string
-      macos?: string
-      android?: string
-      linux?: string
-      windows?: string
-    }
-    /** Path for the generated addons.yml (BareKit Swift dependency list) */
-    addonsYml?: string
-  }
+  /** Folder of the generated package (the Swift package or the Kotlin
+   *  module), relative to the config file. bare-stow derives the Swift module
+   *  name from its basename. Defaults to './wdk-worklet' (module WdkWorklet).
+   *  On every run `generate` deletes what its last run wrote there and
+   *  writes the package again; other files in the folder are kept. */
+  output?: string
 
   /** Build options */
   options?: {
     minify?: boolean
-    sourceMaps?: boolean
+    /** Hosts the package is built for, e.g. ['ios-arm64', 'ios-arm64-simulator'].
+     *  They select which builds of the native addons are included. Defaults to
+     *  every host bare-stow supports for the language. */
     targets?: string[]
-    /** Link native addons via bare-link. Defaults to false. */
-    linkAddons?: boolean
-    /** Xcode target name used in the generated addons.yml. Defaults to 'app'. */
-    swiftTarget?: string
     /** Convert ESM to CJS while packing. Required for engines whose Bare port
      *  can't load ES modules (e.g. JSC on iOS/macOS, QuickJS on Android);
      *  leave off when every target runs an ESM-capable engine (V8).
@@ -142,12 +129,6 @@ export interface WdkBundleConfig {
     /** Adds stack traces to the errors the worklet returns. Not for
      *  production builds. Defaults to false. */
     debug?: boolean
-    /** Modules and addons the host runtime embeds (bare-pack `builtins`).
-     *  Matching specifiers resolve to `builtin:` URLs served by the host
-     *  instead of being packed or linked, e.g. `[{ addon: 'bare-fs' }]` for
-     *  an addon compiled into bare-kit. Must match the host build the app
-     *  ships. Defaults to none. */
-    builtins?: ConditionalSpecifier[]
     /** Enables pear-wrk-wdk's handle-leak diagnostic (registerHandleLeakCheck),
      *  which repeatedly walks and logs active handles while the worklet is
      *  suspended, to help identify what's keeping the event loop from
@@ -164,17 +145,6 @@ export interface ResolvedConfig extends WdkBundleConfig {
   configPath: string
   /** Absolute path to project root */
   projectRoot: string
-  /** Resolved output paths (absolute) */
-  resolvedOutput: {
-    bundle: string
-    types: string
-    addons: {
-      ios: string
-      macos: string
-      android: string
-      linux: string
-      windows: string
-    }
-    addonsYml: string
-  }
+  /** Absolute path of the folder of the generated package */
+  outputDir: string
 }
