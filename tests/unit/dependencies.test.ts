@@ -15,7 +15,9 @@ import {
   findMissingRequiredPeers,
   findMissingOptionalPeers,
   scanPeerDependencies,
-  collectInstalledPackages
+  collectInstalledPackages,
+  findLegacyRuntime,
+  toInstallSpec
 } from '../../src/validators/dependencies'
 
 describe('Dependency Validator', () => {
@@ -645,6 +647,59 @@ describe('Dependency Validator', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain('Cannot auto-install local paths')
+    })
+  })
+
+  describe('findLegacyRuntime', () => {
+    const writePackage = (dir: string, name: string): string => {
+      const pkgDir = path.join(tempDir, 'node_modules', dir)
+      fs.mkdirSync(pkgDir, { recursive: true })
+      fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name, version: '1.0.0' }))
+      return pkgDir
+    }
+
+    it('should find bare-node-runtime installed at the root', () => {
+      const runtimeDir = writePackage('bare-node-runtime', 'bare-node-runtime')
+
+      expect(findLegacyRuntime(tempDir)).toEqual([runtimeDir])
+    })
+
+    it('should not count a bare-node-runtime folder that holds bare-wdk-runtime', () => {
+      writePackage('bare-node-runtime', 'bare-wdk-runtime')
+
+      expect(findLegacyRuntime(tempDir)).toEqual([])
+    })
+
+    it('should find the real one nested under a wallet beside a redirected one at the root', () => {
+      writePackage('bare-node-runtime', 'bare-wdk-runtime')
+      writePackage('@tetherto/wdk-wallet-evm', '@tetherto/wdk-wallet-evm')
+      const nestedDir = writePackage('@tetherto/wdk-wallet-evm/node_modules/bare-node-runtime', 'bare-node-runtime')
+
+      expect(findLegacyRuntime(tempDir)).toEqual([nestedDir])
+    })
+
+    it('should find nothing when the package is not installed', () => {
+      writePackage('bare-wdk-runtime', 'bare-wdk-runtime')
+
+      expect(findLegacyRuntime(tempDir)).toEqual([])
+    })
+
+    it('should find nothing in a project without node_modules', () => {
+      expect(findLegacyRuntime(tempDir)).toEqual([])
+    })
+  })
+
+  describe('toInstallSpec', () => {
+    it('should give the commit of the RC line for pear-wrk-wdk', () => {
+      expect(toInstallSpec('@tetherto/pear-wrk-wdk')).toBe('@tetherto/pear-wrk-wdk@github:claudiovb/pear-wrk-wdk#1c72715')
+    })
+
+    it('should give the line of bare-stow-runtime that pairs with the pinned bare-stow', () => {
+      expect(toInstallSpec('bare-stow-runtime')).toBe('bare-stow-runtime@^0.1.2')
+    })
+
+    it('should give the name of any other package', () => {
+      expect(toInstallSpec('@tetherto/wdk-wallet-evm')).toBe('@tetherto/wdk-wallet-evm')
     })
   })
 

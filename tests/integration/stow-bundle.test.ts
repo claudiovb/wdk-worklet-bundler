@@ -265,7 +265,7 @@ describe('stowBundle against the real bare-stow', () => {
       // Assert
       await expect(act).rejects.toThrow(
         `The @tetherto/pear-wrk-wdk installed in ${ltsDir} does not export createServerProvider, ` +
-        'so it cannot serve a bare-stow bundle. Install the RC line of the package (dist-tag `next`).'
+        'so it cannot serve a bare-stow bundle. Install the RC line of the package: npm install @tetherto/pear-wrk-wdk@github:claudiovb/pear-wrk-wdk#1c72715'
       )
     })
 

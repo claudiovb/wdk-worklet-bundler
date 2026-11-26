@@ -65,7 +65,13 @@ export function shouldConvertEsmToCjs (config: WdkBundleConfig): boolean {
 }
 
 /** Values given on the command line that replace the config file's. */
-export type ConfigOverrides = Partial<Pick<WdkBundleConfig, 'transport'>>
+export type ConfigOverrides = Partial<Pick<WdkBundleConfig, 'transport'>> & {
+  /**
+   * Folder with the package.json and node_modules the worklet is built from,
+   * relative to the current directory. Defaults to the folder of the config file.
+   */
+  projectRoot?: string
+}
 
 /**
  * Load, validate and resolve the config file.
@@ -75,6 +81,7 @@ export type ConfigOverrides = Partial<Pick<WdkBundleConfig, 'transport'>>
  * @param overrides - Values that replace the config file's before validation.
  * @throws {Error} If the file is missing, is not valid JSON, or the config,
  *   with the overrides applied, is invalid.
+ * @throws {Error} If the project root given in the overrides does not exist.
  */
 export async function loadConfig (configPath?: string, overrides: ConfigOverrides = {}): Promise<ResolvedConfig> {
   const cwd = process.cwd()
@@ -107,7 +114,13 @@ export async function loadConfig (configPath?: string, overrides: ConfigOverride
   // Validate config
   validateConfig(config)
 
-  const projectRoot = path.dirname(filepath)
+  const projectRoot = overrides.projectRoot !== undefined
+    ? path.resolve(cwd, overrides.projectRoot)
+    : path.dirname(filepath)
+
+  if (!fs.existsSync(projectRoot)) {
+    throw new Error(`Project root not found: ${projectRoot}`)
+  }
 
   return {
     ...config,

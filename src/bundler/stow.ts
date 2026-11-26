@@ -10,6 +10,7 @@ import path from 'path'
 import { createRequire } from 'module'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { isJavaScriptPath, stripModuleType, transformEsmToCjs } from './esm-to-cjs'
+import { PEAR_WRK_WDK_INSTALL_SPEC } from '../constants'
 
 const PEAR_WRK_WDK = '@tetherto/pear-wrk-wdk'
 
@@ -186,7 +187,7 @@ function loadServerProvider (
   if (typeof createServerProvider !== 'function') {
     throw new Error(
       `The ${PEAR_WRK_WDK} installed in ${projectRoot} does not export createServerProvider, ` +
-      'so it cannot serve a bare-stow bundle. Install the RC line of the package (dist-tag `next`).'
+      `so it cannot serve a bare-stow bundle. Install the RC line of the package: npm install ${PEAR_WRK_WDK_INSTALL_SPEC}`
     )
   }
 

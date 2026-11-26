@@ -19,7 +19,18 @@ export const JSONRPC_TRANSPORT_REMOVED =
   "the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). " +
   'It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.'
 
-// The published WDK packages import bare-node-runtime. Until they import
-// bare-wdk-runtime themselves (tetherto/wdk#133), an override redirects it.
-export const RUNTIME_OVERRIDE_PACKAGE = 'bare-node-runtime'
+// What `--install` asks npm for, for the packages whose name alone would
+// bring a version this line cannot use.
+// RELEASE BLOCKER: the RC line of pear-wrk-wdk is not published yet, so it uses the gh pr that's open for now
+export const PEAR_WRK_WDK_INSTALL_SPEC = '@tetherto/pear-wrk-wdk@github:claudiovb/pear-wrk-wdk#1c72715'
+export const INSTALL_SPECS: Record<string, string> = {
+  '@tetherto/pear-wrk-wdk': PEAR_WRK_WDK_INSTALL_SPEC,
+  // The line of the runtime that pairs with the pinned bare-stow.
+  'bare-stow-runtime': 'bare-stow-runtime@^0.1.2'
+}
+
+// The runtime the published WDK packages import. It does not run on the
+// JavaScriptCore and QuickJS engines. Until the packages import
+// bare-wdk-runtime themselves (tetherto/wdk#133), an npm override redirects it.
+export const LEGACY_RUNTIME_PACKAGE = 'bare-node-runtime'
 export const RUNTIME_OVERRIDE_SPEC = 'npm:bare-wdk-runtime@^3.0.1'

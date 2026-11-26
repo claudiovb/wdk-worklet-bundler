@@ -97,4 +97,32 @@ describe('loadConfig', () => {
 
     expect(config.outputDir).toBe(path.join(tempDir, 'generated', 'WalletWorklet'))
   })
+
+  it('should take the folder of the config file as the project root', async () => {
+    const configPath = writeConfig({ transport: 'bare-rpc', language: 'swift', networks: { eth: { package: 'pkg' } } })
+
+    const config = await loadConfig(configPath)
+
+    expect(config.projectRoot).toBe(tempDir)
+  })
+
+  it('should take the project root of the override, relative to the current directory, and keep the output folder next to the config file', async () => {
+    const configPath = writeConfig({ transport: 'bare-rpc', language: 'swift', networks: { eth: { package: 'pkg' } } })
+    const appDir = path.join(tempDir, 'app')
+    fs.mkdirSync(appDir)
+
+    const config = await loadConfig(configPath, { projectRoot: path.relative(process.cwd(), appDir) })
+
+    expect(config.projectRoot).toBe(appDir)
+    expect(config.outputDir).toBe(path.join(tempDir, 'wdk-worklet'))
+  })
+
+  it('should fail when the project root of the override does not exist', async () => {
+    const configPath = writeConfig({ transport: 'bare-rpc', language: 'swift', networks: { eth: { package: 'pkg' } } })
+    const missingDir = path.join(tempDir, 'no-such-folder')
+
+    const loading = loadConfig(configPath, { projectRoot: missingDir })
+
+    await expect(loading).rejects.toThrow(`Project root not found: ${missingDir}`)
+  })
 })

@@ -14,6 +14,8 @@ export function getPackageList (config: WdkBundleConfig): string[] {
   // The entry requires the Pear Worklet runtime unconditionally
   // (@tetherto/pear-wrk-wdk/worklet)
   packages.add('@tetherto/pear-wrk-wdk')
+  // bare-stow's shim, the first module of the bundle, requires it
+  packages.add('bare-stow-runtime')
 
   if (config.networks) {
     for (const net of Object.values(config.networks)) {

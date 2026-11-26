@@ -432,8 +432,69 @@ describe('generateBundle', () => {
     expect(result.success).toBe(false)
     expect(result.error).toBe(
       `The @tetherto/pear-wrk-wdk installed in ${ltsDir} does not export createServerProvider, ` +
-      'so it cannot serve a bare-stow bundle. Install the RC line of the package (dist-tag `next`).'
+      'so it cannot serve a bare-stow bundle. Install the RC line of the package: npm install @tetherto/pear-wrk-wdk@github:claudiovb/pear-wrk-wdk#1c72715'
     )
+  })
+
+  describe('with the real bare-node-runtime installed', () => {
+    const FIX = 'Redirect it to bare-wdk-runtime: add "overrides": { "bare-node-runtime": "npm:bare-wdk-runtime@^3.0.1" } to package.json and run npm install.'
+    let legacyDir: string
+
+    const makeLegacyConfig = (options: ResolvedConfig['options']): ResolvedConfig =>
+      makeConfig({ projectRoot: legacyDir, configPath: path.join(legacyDir, 'wdk.config.js'), options })
+
+    beforeEach(() => {
+      legacyDir = path.join(tempDir, `legacy-proj-${outCount}`)
+      writeStandInWdkProject(legacyDir)
+      writeFixtureFile(legacyDir, 'node_modules/bare-node-runtime/package.json', JSON.stringify({ name: 'bare-node-runtime', version: '1.5.5' }))
+    })
+
+    it('should warn and still write the package with the v8 engine', async () => {
+      // Arrange
+      const config = makeLegacyConfig({ targets: ['ios-arm64'] })
+      const logged: string[] = []
+      const logSpy = jest.spyOn(console, 'log').mockImplementation((message: string) => { logged.push(message) })
+
+      // Act
+      const result = await generateBundle(config)
+      logSpy.mockRestore()
+
+      // Assert
+      expect(result.success).toBe(true)
+      expect(logged).toContain(`  ⚠️  bare-node-runtime is installed (node_modules/bare-node-runtime), so the bundle carries two runtimes. ${FIX}`)
+    })
+
+    it.each(['javascriptcore', 'quickjs'] as const)('should stop before writing anything with the %s engine', async (engine) => {
+      // Arrange
+      const config = makeLegacyConfig({ engine })
+
+      // Act
+      const result = await generateBundle(config, { silent: true })
+
+      // Assert
+      expect(result.success).toBe(false)
+      expect(result.error).toBe(`bare-node-runtime is installed (node_modules/bare-node-runtime) and does not run on the '${engine}' engine. ${FIX}`)
+      expect(fs.existsSync(config.outputDir)).toBe(false)
+      expect(fs.existsSync(path.join(legacyDir, '.wdk'))).toBe(false)
+    })
+  })
+
+  it('should not warn about a bare-node-runtime folder that holds bare-wdk-runtime', async () => {
+    // Arrange: what the npm override installs
+    const redirectedDir = path.join(tempDir, 'redirected-proj')
+    writeStandInWdkProject(redirectedDir)
+    writeFixtureFile(redirectedDir, 'node_modules/bare-node-runtime/package.json', JSON.stringify({ name: 'bare-wdk-runtime', version: '3.0.1' }))
+    const config = makeConfig({ projectRoot: redirectedDir, configPath: path.join(redirectedDir, 'wdk.config.js'), options: { targets: ['ios-arm64'], engine: 'javascriptcore' } })
+    const logged: string[] = []
+    const logSpy = jest.spyOn(console, 'log').mockImplementation((message: string) => { logged.push(message) })
+
+    // Act
+    const result = await generateBundle(config)
+    logSpy.mockRestore()
+
+    // Assert
+    expect(result.success).toBe(true)
+    expect(logged.filter((message) => message.includes('bare-node-runtime'))).toEqual([])
   })
 
   it('should write nothing on a dry run', async () => {

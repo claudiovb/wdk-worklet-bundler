@@ -7,7 +7,7 @@
 import { Command } from 'commander'
 import fs from 'fs'
 import path from 'path'
-import { DEFAULT_OUTPUT_DIR, DEFAULT_PACKAGE_PATH, RUNTIME_OVERRIDE_PACKAGE, RUNTIME_OVERRIDE_SPEC } from './constants'
+import { DEFAULT_OUTPUT_DIR, DEFAULT_PACKAGE_PATH, LEGACY_RUNTIME_PACKAGE, RUNTIME_OVERRIDE_SPEC } from './constants'
 import { printBanner } from './utils/banner'
 import { getPackageList } from './config/packages'
 import type { WdkBundleConfig } from './config/types'
@@ -15,6 +15,7 @@ import pkg from '../package.json'
 
 interface GenerateOptions {
   config?: string
+  projectRoot?: string
   install?: boolean
   keepArtifacts?: boolean
   dryRun?: boolean
@@ -31,6 +32,7 @@ interface InitOptions {
 
 interface ValidateOptions {
   config?: string
+  projectRoot?: string
 }
 
 interface ListModulesOptions {
@@ -49,6 +51,7 @@ program
   .command('generate')
   .description('Generate the WDK worklet package from configuration')
   .option('-c, --config <path>', 'Path to config file')
+  .option('--project-root <dir>', 'Folder with the package.json and node_modules to build from (default: the folder of the config file)')
   .option('--install', 'Auto-install missing dependencies')
   .option('--keep-artifacts', 'Keep intermediate generated files (useful for debugging)')
   .option('--dry-run', 'Show what would be generated without building')
@@ -66,7 +69,8 @@ program
       detectPackageManager,
       installablePackageRoot,
       generateInstallCommand,
-      writeRuntimeOverride
+      writeRuntimeOverride,
+      toInstallSpec
     } = await import('./validators/dependencies')
     const { generateBundle, generateSourceFiles } = await import('./bundler')
 
@@ -104,8 +108,12 @@ program
     try {
       console.log('\n🔍 Reading configuration...\n')
       // --transport replaces the config file's value and is validated with it
-      const config = await loadConfig(options.config, { transport: options.transport as WdkBundleConfig['transport'] })
+      const config = await loadConfig(options.config, {
+        transport: options.transport as WdkBundleConfig['transport'],
+        projectRoot: options.projectRoot
+      })
       console.log(`  Config: ${config.configPath}`)
+      if (options.projectRoot !== undefined) console.log(`  Project root: ${config.projectRoot}`)
 
       console.log('\n📦 Checking core dependencies...\n')
       const requiredPackages = getPackageList(config)
@@ -133,10 +141,10 @@ program
           // The override must be in package.json before the install resolves
           // the wallet packages' own bare-node-runtime dependency.
           if (writeRuntimeOverride(config.projectRoot)) {
-            console.log(`  ✓ package.json: override ${RUNTIME_OVERRIDE_PACKAGE} → ${RUNTIME_OVERRIDE_SPEC}\n`)
+            console.log(`  ✓ package.json: override ${LEGACY_RUNTIME_PACKAGE} → ${RUNTIME_OVERRIDE_SPEC}\n`)
           }
 
-          const result = installDependencies(validation.missing, config.projectRoot, {
+          const result = installDependencies(validation.missing.map(toInstallSpec), config.projectRoot, {
             verbose: options.verbose
           })
 
@@ -250,7 +258,7 @@ program
           const installable = installablePackageRoot(result.missingModule)
           if (installable != null) {
             const installCommand = generateInstallCommand(
-              [installable],
+              [toInstallSpec(installable)],
               detectPackageManager(config.projectRoot)
             )
             console.log('💡 This appears to be a required dependency that was not detected automatically.')
@@ -326,6 +334,7 @@ program
   .command('validate')
   .description('Validate configuration without building')
   .option('-c, --config <path>', 'Path to config file')
+  .option('--project-root <dir>', 'Folder with the package.json and node_modules to check (default: the folder of the config file)')
   .action(async (options: ValidateOptions) => {
     const { loadConfig } = await import('./config/loader')
     const { validateDependencies } = await import('./validators/dependencies')
@@ -333,8 +342,9 @@ program
     try {
       console.log('\n🔍 Validating configuration...\n')
 
-      const config = await loadConfig(options.config)
+      const config = await loadConfig(options.config, { projectRoot: options.projectRoot })
       console.log(`  ✓ Config file valid: ${config.configPath}`)
+      if (options.projectRoot !== undefined) console.log(`  Project root: ${config.projectRoot}`)
 
       const requiredPackages = getPackageList(config)
       const validation = validateDependencies(requiredPackages, config.projectRoot)

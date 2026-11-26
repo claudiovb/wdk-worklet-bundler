@@ -15,6 +15,12 @@ describe('getPackageList', () => {
     expect(packages).toContain('@tetherto/pear-wrk-wdk')
   })
 
+  it('always includes the runtime the shim of bare-stow requires', () => {
+    const packages = getPackageList(makeConfig())
+
+    expect(packages).toEqual(['@tetherto/wdk', 'bare-wdk-runtime', '@tetherto/pear-wrk-wdk', 'bare-stow-runtime'])
+  })
+
   it('includes the Pear Worklet runtime regardless of transport', () => {
     for (const transport of ['bare-rpc', 'hrpc'] as const) {
       expect(getPackageList(makeConfig({ transport }))).toContain('@tetherto/pear-wrk-wdk')

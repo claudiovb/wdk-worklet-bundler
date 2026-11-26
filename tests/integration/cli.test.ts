@@ -21,17 +21,19 @@ describe('CLI Integration Tests', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
-  const runCli = (args: string): string => {
+  const runCliIn = (cwd: string, args: string): string => {
     try {
       return execSync(`node ${CLI_PATH} ${args} 2>&1`, {
         encoding: 'utf-8',
-        cwd: tempDir
+        cwd
       })
     } catch (error: unknown) {
       const execError = error as { stdout?: string, stderr?: string, message?: string }
       return execError.stdout || execError.stderr || execError.message || ''
     }
   }
+
+  const runCli = (args: string): string => runCliIn(tempDir, args)
 
   const mockPackage = (name: string): void => {
     const pkgPath = path.join(tempDir, 'node_modules', name)
@@ -104,10 +106,30 @@ module.exports = {
       mockPackage('@tetherto/wdk')
       mockPackage('bare-wdk-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
+      mockPackage('bare-stow-runtime')
 
       const output = runCli('validate')
 
       expect(output).toContain('Config file valid')
+    })
+
+    it('should check the packages of the folder given with --project-root', () => {
+      writeFixtureFile(tempDir, 'config/wdk.config.js', `
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
+  networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
+};
+`)
+      writeStandInWdkProject(path.join(tempDir, 'app'))
+
+      const withFlag = runCli('validate --config config/wdk.config.js --project-root app')
+      const withoutFlag = runCli('validate --config config/wdk.config.js')
+
+      expect(withFlag).toContain(`Project root: ${path.join(fs.realpathSync(tempDir), 'app')}`)
+      expect(withFlag).toContain('Configuration is valid and ready to build!')
+      expect(withoutFlag).toContain('✗ @tetherto/wdk — NOT INSTALLED')
+      expect(withoutFlag).toContain('Missing dependencies. Install them before building.')
     })
 
     it('should fail on missing dependencies', () => {
@@ -248,8 +270,70 @@ module.exports = {
         const output = runCli('generate')
 
         expect(output).toContain('Package generation failed')
-        expect(output).toContain('does not export createServerProvider, so it cannot serve a bare-stow bundle. Install the RC line of the package (dist-tag `next`).')
+        expect(output).toContain('does not export createServerProvider, so it cannot serve a bare-stow bundle. Install the RC line of the package: npm install @tetherto/pear-wrk-wdk@github:claudiovb/pear-wrk-wdk#1c72715')
         expect(fs.existsSync(path.join(tempDir, 'wdk-worklet'))).toBe(false)
+      })
+    })
+
+    describe('with --project-root', () => {
+      const CONFIG = `
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
+  networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
+  options: { targets: ['ios-arm64'] },
+};
+`
+
+      it('should build from the packages of that folder and write the package next to the config file', () => {
+        writeFixtureFile(tempDir, 'config/wdk.config.js', CONFIG)
+        writeStandInWdkProject(path.join(tempDir, 'app'))
+
+        const output = runCli('generate --config config/wdk.config.js --project-root app --keep-artifacts')
+
+        expect(output).toContain(`Project root: ${path.join(fs.realpathSync(tempDir), 'app')}`)
+        expect(output).toContain('Package generated successfully')
+        expect(listFiles(path.join(tempDir, 'config'))).toEqual([
+          'wdk-worklet/.wdk-worklet-bundler',
+          'wdk-worklet/Package.swift',
+          'wdk-worklet/Sources/WdkWorklet/Client.swift',
+          'wdk-worklet/Sources/WdkWorklet/Harness.swift',
+          'wdk-worklet/Sources/WdkWorklet/index.bundle',
+          'wdk.config.js'
+        ])
+        expect(listFiles(path.join(tempDir, 'app', '.wdk'))).toEqual(['wdk-worklet.generated.js'])
+      })
+
+      it('should look for the packages in that folder, not beside the config file', () => {
+        writeFixtureFile(tempDir, 'config/wdk.config.js', CONFIG)
+        writeStandInWdkProject(path.join(tempDir, 'config'))
+        fs.mkdirSync(path.join(tempDir, 'app'))
+
+        const output = runCli('generate --config config/wdk.config.js --project-root app')
+
+        expect(output).toContain('✗ @tetherto/wdk — NOT INSTALLED')
+        expect(output).toContain('Cannot proceed without core dependencies.')
+        expect(fs.existsSync(path.join(tempDir, 'config', 'wdk-worklet'))).toBe(false)
+      })
+
+      it('should write the runtime override into the package.json of that folder with --install', () => {
+        writeFixtureFile(tempDir, 'config/wdk.config.js', CONFIG.replace("'@tetherto/wdk-wallet-evm'", "'./local-wdk-module'"))
+        writeStandInWdkProject(path.join(tempDir, 'app'))
+
+        runCli('generate --config config/wdk.config.js --project-root app --install')
+
+        expect(JSON.parse(fs.readFileSync(path.join(tempDir, 'app', 'package.json'), 'utf-8'))).toEqual({
+          overrides: { 'bare-node-runtime': 'npm:bare-wdk-runtime@^3.0.1' }
+        })
+        expect(fs.existsSync(path.join(tempDir, 'config', 'package.json'))).toBe(false)
+      })
+
+      it('should fail when that folder does not exist', () => {
+        writeFixtureFile(tempDir, 'config/wdk.config.js', CONFIG)
+
+        const output = runCli('generate --config config/wdk.config.js --project-root app')
+
+        expect(output).toContain(`Project root not found: ${path.join(fs.realpathSync(tempDir), 'app')}`)
       })
     })
 
@@ -272,8 +356,22 @@ module.exports = {
       expect(output).toContain('Missing core dependencies')
     })
 
-    it('should attempt install with --install flag', () => {
-      const config = `
+    describe('with --install in an empty project', () => {
+      // One real install for the cases below. npm takes the packages from the
+      // registry and pear-wrk-wdk from GitHub, so these cases need the network.
+      const INSTALL_TIMEOUT_MS = 600000
+      let projectDir: string
+      let installOutput: string
+
+      const installedVersion = (name: string): string =>
+        (JSON.parse(fs.readFileSync(path.join(projectDir, 'node_modules', name, 'package.json'), 'utf-8')) as { version: string }).version
+
+      const filesOutside = (dir: string, addonsDir: string): string[] =>
+        listFiles(dir).filter((file) => !file.startsWith(addonsDir))
+
+      beforeAll(() => {
+        projectDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wdk-cli-install-')))
+        fs.writeFileSync(path.join(projectDir, 'wdk.config.js'), `
 module.exports = {
   transport: 'bare-rpc',
   language: 'swift',
@@ -282,16 +380,81 @@ module.exports = {
       package: '@tetherto/wdk-wallet-evm-erc-4337',
     },
   },
+  options: { targets: ['ios-arm64'] },
 };
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-      fs.writeFileSync(
-        path.join(tempDir, 'package.json'),
-        JSON.stringify({ name: 'test-project', version: '1.0.0' })
-      )
+`)
+        installOutput = runCliIn(projectDir, 'generate --install')
+      }, INSTALL_TIMEOUT_MS)
 
-      const output = runCli('generate --install')
-      expect(output).toContain('Installing missing dependencies')
+      afterAll(() => {
+        fs.rmSync(projectDir, { recursive: true, force: true })
+      })
+
+      it('should write the override and install the packages of the rc line', () => {
+        const pkg = JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf-8')) as {
+          overrides: Record<string, string>
+          dependencies: Record<string, string>
+        }
+
+        expect(installOutput).toContain('Installing missing dependencies')
+        expect(installOutput).toContain('package.json: override bare-node-runtime → npm:bare-wdk-runtime@^3.0.1')
+        expect(pkg.overrides).toEqual({ 'bare-node-runtime': 'npm:bare-wdk-runtime@^3.0.1' })
+        expect(Object.keys(pkg.dependencies).sort()).toEqual([
+          '@tetherto/pear-wrk-wdk',
+          '@tetherto/wdk',
+          '@tetherto/wdk-wallet-evm-erc-4337',
+          'bare-stow-runtime',
+          'bare-wdk-runtime'
+        ])
+        expect(pkg.dependencies['@tetherto/pear-wrk-wdk']).toBe('github:claudiovb/pear-wrk-wdk#1c72715')
+        expect(pkg.dependencies['bare-stow-runtime']).toBe('^0.1.2')
+      })
+
+      it('should write the Swift package from what it installed, with the wallets on bare-wdk-runtime', () => {
+        const packageDir = path.join(projectDir, 'wdk-worklet')
+        const bundle = readStowedBundle(path.join(packageDir, 'Sources/WdkWorklet/index.bundle'))
+        const redirectedRuntime = JSON.parse(readBundleFile(bundle, '/node_modules/bare-node-runtime/package.json')) as { name: string }
+
+        expect(installOutput).toContain('Package generated successfully')
+        expect(installOutput).not.toContain('bare-node-runtime is installed')
+        expect(filesOutside(packageDir, 'Frameworks/')).toEqual([
+          '.wdk-worklet-bundler',
+          'Package.swift',
+          'Sources/WdkWorklet/Client.swift',
+          'Sources/WdkWorklet/Harness.swift',
+          'Sources/WdkWorklet/index.bundle'
+        ])
+        expect(fs.existsSync(path.join(packageDir, `Frameworks/sodium-native.${installedVersion('sodium-native')}.xcframework/Info.plist`))).toBe(true)
+        expect([...bundle.keys()]).toContain('/.wdk/wdk-worklet.generated.js')
+        expect([...bundle.keys()]).toContain('/node_modules/@tetherto/pear-wrk-wdk/worklet.js')
+        expect([...bundle.keys()]).toContain('/node_modules/@tetherto/wdk-wallet-evm-erc-4337/package.json')
+        expect(redirectedRuntime.name).toBe('bare-wdk-runtime')
+      })
+
+      it('should write the Kotlin module from the same install', () => {
+        fs.writeFileSync(path.join(projectDir, 'wdk.kotlin.config.js'), `
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'kotlin',
+  networks: { ethereum: { package: '@tetherto/wdk-wallet-evm-erc-4337' } },
+  output: './kotlin/wdk-worklet',
+  options: { targets: ['android-arm64'] },
+};
+`)
+
+        const output = runCliIn(projectDir, 'generate --config wdk.kotlin.config.js')
+        const moduleDir = path.join(projectDir, 'kotlin', 'wdk-worklet')
+
+        expect(output).toContain('Package generated successfully')
+        expect(filesOutside(moduleDir, 'src/main/addons/')).toEqual([
+          '.wdk-worklet-bundler',
+          'build.gradle',
+          'src/main/assets/to/tether/wdk/worklet/index.bundle',
+          'src/main/kotlin/to/tether/wdk/worklet/Client.kt',
+          'src/main/kotlin/to/tether/wdk/worklet/Harness.kt'
+        ])
+        expect(fs.statSync(path.join(moduleDir, `src/main/addons/arm64-v8a/libsodium-native.${installedVersion('sodium-native')}.so`)).size).toBeGreaterThan(0)
+      })
     })
 
     it('should write the runtime override into package.json before installing with npm', () => {
@@ -314,6 +477,7 @@ module.exports = {
       mockPackage('@tetherto/wdk')
       mockPackage('bare-wdk-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
+      mockPackage('bare-stow-runtime')
 
       const output = runCli('generate --install')
       const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf-8')) as unknown
@@ -341,6 +505,8 @@ module.exports = {
       fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
       mockPackage('@tetherto/wdk')
       mockPackage('bare-wdk-runtime')
+      mockPackage('@tetherto/pear-wrk-wdk')
+      mockPackage('bare-stow-runtime')
 
       const output = runCli('generate --install')
 
@@ -365,6 +531,7 @@ module.exports = {
       mockPackage('@tetherto/wdk')
       mockPackage('bare-wdk-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
+      mockPackage('bare-stow-runtime')
 
       const output = runCli('generate --dry-run')
 
@@ -555,6 +722,7 @@ module.exports = {
       mockPackage('@tetherto/wdk')
       mockPackage('bare-wdk-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
+      mockPackage('bare-stow-runtime')
 
       const output = runCli('generate --dry-run --transport hrpc')
 

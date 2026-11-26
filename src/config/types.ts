@@ -143,7 +143,9 @@ export interface WdkBundleConfig {
 export interface ResolvedConfig extends WdkBundleConfig {
   /** Absolute path to config file */
   configPath: string
-  /** Absolute path to project root */
+  /** Absolute path of the folder with the package.json and node_modules the
+   *  worklet is built from: the folder of the config file, unless another
+   *  one was given (`--project-root`). */
   projectRoot: string
   /** Absolute path of the folder of the generated package */
   outputDir: string
