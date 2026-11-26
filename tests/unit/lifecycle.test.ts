@@ -16,7 +16,7 @@ interface Agent {
   resume: jest.Mock
 }
 
-describe('hrpc lifecycle', () => {
+describe('entry lifecycle', () => {
   let dir: string
 
   beforeEach(() => {
@@ -56,8 +56,7 @@ describe('hrpc lifecycle', () => {
       if (id === '@tetherto/wdk') return class WDK {}
       if (id === '@tetherto/pear-wrk-wdk/worklet') {
         return {
-          HRPC: class HRPC {},
-          registerRpcHandlers: (): void => {},
+          createStart: () => (): void => {},
           utils: { logger }
         }
       }
@@ -72,7 +71,7 @@ describe('hrpc lifecycle', () => {
     const context = vm.runInNewContext(code + '\ncontext', {
       require: requireStub,
       Bare: bare,
-      BareKit: { IPC: {} },
+      module: { exports: {} },
       process: new EventEmitter(),
       console: { log: jest.fn(), error: jest.fn() }
     }) as { moduleRuntime?: Runtime }

@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import vm from 'vm'
 import { generateWalletModulesCode } from '../../src/generators/wallet-modules'
 import { generateModuleModulesCode } from '../../src/generators/module-modules'
 import { generateEntryPoint } from '../../src/generators/entry'
@@ -206,13 +207,97 @@ describe('Code Generators', () => {
       expect(content).toContain("require('@tetherto/pear-wrk-wdk/worklet'")
     })
 
-    it('should include RPC handlers', async () => {
+    it('should end by exporting the start function made by createStart, and wire no transport itself', async () => {
       const config = createMockConfig()
       const entryPath = await generateEntryPoint(config, tempDir)
       const content = fs.readFileSync(entryPath, 'utf-8')
 
-      expect(content).toContain('registerRpcHandlers(rpc, context)')
-      expect(content).toContain('const rpc = new HRPC(BareIPC)')
+      expect(content.endsWith("logger.info('Worklet started');\n\nmodule.exports = createStart(context);")).toBe(true)
+      expect(content).not.toContain('HRPC')
+      expect(content).not.toContain('registerRpcHandlers')
+      expect(content).not.toContain('BareKit')
+    })
+
+    it('should generate the same entry for both transports, apart from the timestamp line', async () => {
+      const withoutTimestamp = (content: string): string => content.replace(/^\/\/ Generated at: .*\n/m, '')
+      const bareRpcDir = path.join(tempDir, 'bare-rpc')
+      const hrpcDir = path.join(tempDir, 'hrpc')
+
+      const bareRpc = fs.readFileSync(await generateEntryPoint(createMockConfig({ transport: 'bare-rpc' }), bareRpcDir), 'utf-8')
+      const hrpc = fs.readFileSync(await generateEntryPoint(createMockConfig({ transport: 'hrpc' }), hrpcDir), 'utf-8')
+
+      expect(withoutTimestamp(hrpc)).toBe(withoutTimestamp(bareRpc))
+      expect(bareRpc).not.toBe(withoutTimestamp(bareRpc))
+    })
+
+    describe('when the generated entry runs', () => {
+      const start = (): void => {}
+
+      /**
+       * Run the generated entry with a stubbed require, as Bare would load it,
+       * and return what it gave createStart and what it exported.
+       */
+      async function run (config: ResolvedConfig, loadWdk: () => unknown): Promise<{ context: Record<string, unknown>, exported: unknown }> {
+        const code = fs.readFileSync(await generateEntryPoint(config, tempDir), 'utf-8')
+        const createStart = jest.fn<() => void, [Record<string, unknown>]>(() => start)
+        const module = { exports: {} as unknown }
+        const requireStub = (id: string): unknown => {
+          if (id === 'bare-wdk-runtime/global') return {}
+          if (id === '@tetherto/wdk') return loadWdk()
+          if (id === '@tetherto/pear-wrk-wdk/worklet') return { createStart, utils: { logger: { info: (): void => {}, error: (): void => {} } } }
+          throw new Error('Unexpected require: ' + id)
+        }
+        requireStub.cache = {}
+
+        vm.runInNewContext(code, { require: requireStub, module, console: { log: (): void => {}, error: (): void => {} } })
+
+        return { context: createStart.mock.calls[0][0], exported: module.exports }
+      }
+
+      it('should export the start function createStart returned', async () => {
+        const { exported } = await run(createMockConfig(), () => class WDK {})
+
+        expect(exported).toBe(start)
+      })
+
+      it('should pass a null wdkLoadError and the WDK class when the WDK loads', async () => {
+        class WDK {}
+
+        const { context } = await run(createMockConfig(), () => WDK)
+
+        expect(context.wdkLoadError).toBeNull()
+        expect(context.WDK).toBe(WDK)
+      })
+
+      it('should pass the error the WDK threw while loading as wdkLoadError', async () => {
+        const loadError = new Error('Unsupported operation')
+
+        const { context } = await run(createMockConfig(), () => { throw loadError })
+
+        expect(context.wdkLoadError).toBe(loadError)
+        expect(context.WDK).toBeNull()
+      })
+
+      it('should pass debug: false in the context by default', async () => {
+        const { context } = await run(createMockConfig(), () => class WDK {})
+
+        expect(context.debug).toBe(false)
+      })
+
+      it('should pass debug: true in the context when options.debug is set', async () => {
+        const { context } = await run(createMockConfig({ options: { debug: true } }), () => class WDK {})
+
+        expect(context.debug).toBe(true)
+      })
+
+      it('should pass the load error when debug is off, too', async () => {
+        const loadError = new Error('Unsupported operation')
+
+        const { context } = await run(createMockConfig({ options: { debug: false } }), () => { throw loadError })
+
+        expect(context.wdkLoadError).toBe(loadError)
+        expect(context.debug).toBe(false)
+      })
     })
 
     it('should include wallet modules code', async () => {
@@ -311,7 +396,7 @@ describe('Code Generators', () => {
 
         expect(content).not.toContain('registerHandleLeakCheck')
         expect(content).not.toContain('diagnostics/handle-leak-check')
-        expect(content).toContain("const { HRPC, registerRpcHandlers, utils } = require('@tetherto/pear-wrk-wdk/worklet'")
+        expect(content).toContain("const { createStart, utils } = require('@tetherto/pear-wrk-wdk/worklet'")
       })
 
       it('should include the require and registerHandleLeakCheck() call when enabled and resolvable', async () => {

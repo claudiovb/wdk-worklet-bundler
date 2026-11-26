@@ -8,6 +8,15 @@ import { DEFAULT_ENTRY_FILENAME } from '../constants'
 import { generateHandleLeakCheckCode } from './handle-leak-check'
 import { generateLifecycleCode } from './lifecycle'
 
+/**
+ * Write the entry of the worklet: the module bare-stow packs as the root of
+ * the graph. It loads the runtime, the WDK and the configured packages, and
+ * exports the `start` function that pear-wrk-wdk's `createStart` makes from
+ * the context. The transport is not part of it: the same entry serves
+ * `bare-rpc` and `hrpc`, chosen by the server provider given to bare-stow.
+ *
+ * @returns The path of the entry file written into `outputDir`.
+ */
 export async function generateEntryPoint (config: ResolvedConfig, outputDir: string): Promise<string> {
   const walletModulesCode = generateWalletModulesCode(config)
   const protocolModulesCode = generateProtocolModulesCode(config)
@@ -34,8 +43,7 @@ if (typeof Bare !== 'undefined' && Bare.on) {
 }
 
 
-const { IPC: BareIPC } = BareKit
-const { HRPC, registerRpcHandlers, utils } = require('@tetherto/pear-wrk-wdk/worklet', { with: { imports: 'bare-wdk-runtime/imports' }});
+const { createStart, utils } = require('@tetherto/pear-wrk-wdk/worklet', { with: { imports: 'bare-wdk-runtime/imports' }});
 const { logger } = utils;
 ${handleLeakCheckCode}
 // ============================================================
@@ -53,8 +61,6 @@ ${protocolModulesCode}
 // ============================================================
 ${moduleModulesCode}
 
-const rpc = new HRPC(BareIPC);
-
 let wdk = null;
 
 const context = {
@@ -65,14 +71,15 @@ const context = {
   moduleManagers: typeof moduleManagers !== 'undefined' ? moduleManagers : {},
   allowedMethods: ${JSON.stringify(config.allowedMethods ?? {})},
   allowedModuleMethods: ${JSON.stringify(config.allowedModuleMethods ?? {})},
-  wdkLoadError: null
+  wdkLoadError,
+  debug: ${config.options?.debug === true}
 }
-
-registerRpcHandlers(rpc, context);
 
 ${generateLifecycleCode()}
 
 logger.info('Worklet started');
+
+module.exports = createStart(context);
 `.trim()
 
   // Ensure output directory exists

@@ -154,7 +154,7 @@ export async function generateBundle (
         throw new Error(`Artifacts not found at ${entryPath}. Run without --skip-generation first.`)
       }
     } else {
-      if (verbose) log('  Generating HRPC worklet entry point...')
+      if (verbose) log('  Generating worklet entry point...')
       entryPath = await generateEntryPoint(config, generatedDir)
       if (verbose) log(`    Entry: ${entryPath}`)
     }
@@ -346,7 +346,7 @@ export async function generateSourceFiles (
   const generatedDir = path.join(config.projectRoot, DEFAULT_OUTPUT_DIR)
 
   // Generate worklet entry point
-  if (options.verbose) console.log('  Generating HRPC worklet entry point...')
+  if (options.verbose) console.log('  Generating worklet entry point...')
   const entryPath = await generateEntryPoint(config, generatedDir)
 
   // Generate index.js for easy importing (note: bundle won't exist yet in source-only mode)

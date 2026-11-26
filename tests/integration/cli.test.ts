@@ -199,8 +199,7 @@ module.exports = {
       })
       mockPackageFiles('@tetherto/pear-wrk-wdk', {
         'worklet.js': `
-exports.HRPC = class HRPC {};
-exports.registerRpcHandlers = () => {};
+exports.createStart = () => () => {};
 exports.utils = { logger: { info: () => {}, error: () => {} } };
 `
       })
