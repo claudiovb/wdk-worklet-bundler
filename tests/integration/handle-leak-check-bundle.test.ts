@@ -1,38 +1,25 @@
 /**
- * Integration test: prove the actual bare-pack payoff behind
+ * Integration test: prove the actual packing payoff behind
  * generateHandleLeakCheckCode's opt-in design - when options.handleLeakCheck
- * is unset, no require for the diagnostic is emitted, so bare-pack never
+ * is unset, no require for the diagnostic is emitted, so bare-stow never
  * pulls it (or the bare-walk-handles dependency it drags in) into the
  * packed bundle at all. When it's set, both show up.
  *
- * Uses the real bare-pack binary against a fixture @tetherto/pear-wrk-wdk
- * (its diagnostics/handle-leak-check subpath requires bare-walk-handles,
- * mirroring the real package), so this is exercised through actual
- * dependency resolution rather than a reimplementation of bare-pack.
+ * Uses the real bare-stow (through stowBundle) against a fixture
+ * @tetherto/pear-wrk-wdk (its diagnostics/handle-leak-check subpath requires
+ * bare-walk-handles, mirroring the real package), so this is exercised
+ * through actual dependency resolution rather than a reimplementation of it.
  */
 
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { execFileSync } from 'child_process'
 import { generateHandleLeakCheckCode } from '../../src/generators/handle-leak-check'
+import { stowBundle } from '../../src/bundler/stow'
 import type { ResolvedConfig } from '../../src/config/types'
+import { readStowedBundle, writeStandInPackages } from '../helpers/stow-fixture'
 
-const BARE_PACK = path.join(__dirname, '../../node_modules/.bin/bare-pack')
-
-interface Header { files: Record<string, unknown> }
-
-function parseBundleFiles (bundlePath: string): string[] {
-  const buf = fs.readFileSync(bundlePath)
-  const nl = buf.indexOf(0x0a)
-  const N = parseInt(buf.subarray(0, nl).toString(), 10)
-  const headerStart = nl + 1
-  const jsonEnd = headerStart + N - 2
-  const header = JSON.parse(buf.subarray(headerStart, jsonEnd).toString()) as Header
-  return Object.keys(header.files)
-}
-
-describe('generateHandleLeakCheckCode against real bare-pack output', () => {
+describe('generateHandleLeakCheckCode against real bare-stow output', () => {
   let tempDir: string
   let projDir: string
 
@@ -53,18 +40,25 @@ describe('generateHandleLeakCheckCode against real bare-pack output', () => {
   })
 
   beforeAll(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdk-handle-leak-bundle-'))
+    // realpath: bare-stow names the modules by their real paths.
+    tempDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wdk-handle-leak-bundle-')))
     projDir = path.join(tempDir, 'proj')
 
+    writeStandInPackages(projDir)
+
     // Fixture @tetherto/pear-wrk-wdk whose diagnostics/handle-leak-check
-    // subpath requires bare-walk-handles - the dependency bare-pack should
-    // only pull in when the diagnostic is actually required.
+    // subpath requires bare-walk-handles - the dependency bare-stow should
+    // only pull in when the diagnostic is actually required. Its root is the
+    // stand-in server provider.
     const pkgDir = path.join(projDir, 'node_modules/@tetherto/pear-wrk-wdk')
     fs.mkdirSync(path.join(pkgDir, 'diagnostics'), { recursive: true })
     fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({
       name: '@tetherto/pear-wrk-wdk',
       version: '9.9.9',
-      exports: { './diagnostics/handle-leak-check': './diagnostics/handle-leak-check.js' }
+      exports: {
+        '.': './index.js',
+        './diagnostics/handle-leak-check': './diagnostics/handle-leak-check.js'
+      }
     }))
     fs.writeFileSync(path.join(pkgDir, 'diagnostics/handle-leak-check.js'),
       "const { walkHandles } = require('bare-walk-handles')\n" +
@@ -77,39 +71,43 @@ describe('generateHandleLeakCheckCode against real bare-pack output', () => {
     fs.writeFileSync(path.join(walkHandlesDir, 'index.js'), 'module.exports = { walkHandles () { return [] } }\n')
 
     fs.writeFileSync(path.join(projDir, 'package.json'), JSON.stringify({ name: 'fixture-proj', version: '1.0.0' }))
-    fs.writeFileSync(path.join(projDir, 'imports.json'), '{}')
   })
 
   afterAll(() => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
-  const pack = (entryName: string, generatedCode: string, outName: string): string => {
-    fs.writeFileSync(path.join(projDir, entryName), `${generatedCode}\nmodule.exports = { ok: true }\n`)
-    const out = path.join(projDir, outName)
-    execFileSync(BARE_PACK, ['--linked', '--imports', 'imports.json', '--out', out, entryName], {
-      cwd: projDir, stdio: 'pipe'
+  /** Pack an entry made of the generated code and return the keys of the bundle. */
+  const pack = async (entryName: string, generatedCode: string, outName: string): Promise<string[]> => {
+    const entry = path.join(projDir, entryName)
+    fs.writeFileSync(entry, `${generatedCode}\nmodule.exports = { ok: true }\n`)
+    const result = await stowBundle({
+      entry,
+      out: path.join(tempDir, outName, 'wdk-worklet'),
+      projectRoot: projDir,
+      target: 'bare-kit',
+      language: { name: 'swift' },
+      transport: 'hrpc',
+      hosts: ['ios-arm64']
     })
-    return out
+    return [...readStowedBundle(result.bundlePath).keys()]
   }
 
-  it('keeps bare-walk-handles and pear-wrk-wdk out of the bundle when handleLeakCheck is unset', () => {
+  it('keeps bare-walk-handles and pear-wrk-wdk out of the bundle when handleLeakCheck is unset', async () => {
     const code = generateHandleLeakCheckCode(createMockConfig())
     expect(code).toBe('')
 
-    const bundlePath = pack('entry-off.js', code, 'off.bundle')
-    const files = parseBundleFiles(bundlePath)
+    const files = await pack('entry-off.js', code, 'off')
 
     expect(files.some(f => f.includes('bare-walk-handles'))).toBe(false)
     expect(files.some(f => f.includes('pear-wrk-wdk'))).toBe(false)
   })
 
-  it('pulls bare-walk-handles and the diagnostic into the bundle when handleLeakCheck is enabled', () => {
+  it('pulls bare-walk-handles and the diagnostic into the bundle when handleLeakCheck is enabled', async () => {
     const code = generateHandleLeakCheckCode(createMockConfig({ options: { handleLeakCheck: true } }))
     expect(code).toContain('registerHandleLeakCheck')
 
-    const bundlePath = pack('entry-on.js', code, 'on.bundle')
-    const files = parseBundleFiles(bundlePath)
+    const files = await pack('entry-on.js', code, 'on')
 
     expect(files.some(f => f.includes('bare-walk-handles'))).toBe(true)
     expect(files.some(f => f.endsWith('diagnostics/handle-leak-check.js'))).toBe(true)

@@ -20,6 +20,8 @@ export type { LinkedAddon } from './bundler/linked-addons'
 export { readBundle, writeBundleFile, wrapperForPath } from './bundler/bundle-file'
 export type { BundleWrapper } from './bundler/bundle-file'
 export { packBundle } from './bundler/pack'
+export { stowBundle } from './bundler/stow'
+export type { StowBundleOptions, StowBundleResult, StowLanguage, BareRpcLimits } from './bundler/stow'
 export type { PackBundleOptions, PackBundleResult, BarePackOptions, EsmToCjsStats, ConditionalSpecifier } from './bundler/pack'
 
 // Generators
