@@ -50,7 +50,7 @@ describe('hrpc lifecycle', () => {
     const agents = Array.from({ length: 2 }, () => ({ suspend: jest.fn(), resume: jest.fn() }))
     const logger = { info: jest.fn(), error: jest.fn() }
     const requireStub = (id: string): unknown => {
-      if (id === 'bare-node-runtime/global') return {}
+      if (id === 'bare-wdk-runtime/global') return {}
       if (id === '@tetherto/wdk') return class WDK {}
       if (id === '@tetherto/pear-wrk-wdk/worklet') {
         return {
@@ -63,7 +63,7 @@ describe('hrpc lifecycle', () => {
     }
     const cache: Record<string, { exports: { globalAgent: Agent } }> = {
       'file:///app/node_modules/bare-http1/index.js': { exports: { globalAgent: agents[0] } },
-      'file:///app/node_modules/bare-node-runtime/node_modules/bare-https/index.js': { exports: { globalAgent: agents[1] } }
+      'file:///app/node_modules/bare-wdk-runtime/node_modules/bare-https/index.js': { exports: { globalAgent: agents[1] } }
     }
     requireStub.cache = cache
     const code = fs.readFileSync(entry, 'utf8')

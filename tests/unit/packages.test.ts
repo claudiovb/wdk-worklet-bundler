@@ -9,7 +9,7 @@ describe('getPackageList', () => {
     const packages = getPackageList(makeConfig())
 
     expect(packages).toContain('@tetherto/wdk')
-    expect(packages).toContain('bare-node-runtime')
+    expect(packages).toContain('bare-wdk-runtime')
     // Both transport entries require it unconditionally, so it must be
     // validated/installed upfront instead of surfacing as a bare-pack failure
     expect(packages).toContain('@tetherto/pear-wrk-wdk')

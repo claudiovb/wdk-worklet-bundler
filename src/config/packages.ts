@@ -10,7 +10,7 @@ export function getPackageList (config: WdkBundleConfig): string[] {
   // Add core (always required implicitly, unless overriden/preloaded logic changes)
   // For validation, we should probably check it.
   packages.add('@tetherto/wdk')
-  packages.add('bare-node-runtime')
+  packages.add('bare-wdk-runtime')
   // The entry requires the Pear Worklet runtime unconditionally
   // (@tetherto/pear-wrk-wdk/worklet)
   packages.add('@tetherto/pear-wrk-wdk')

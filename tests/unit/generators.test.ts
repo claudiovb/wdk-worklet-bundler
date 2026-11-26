@@ -39,7 +39,7 @@ describe('Code Generators', () => {
       const config = createMockConfig()
       const code = generateWalletModulesCode(config)
 
-      expect(code).toContain("const _wdkModule = require('@tetherto/wdk', { with: { imports: 'bare-node-runtime/imports' } })")
+      expect(code).toContain("const _wdkModule = require('@tetherto/wdk', { with: { imports: 'bare-wdk-runtime/imports' } })")
       expect(code).toContain('WDK = _wdkModule.default || _wdkModule.WDK || _wdkModule')
     })
 
@@ -47,7 +47,7 @@ describe('Code Generators', () => {
       const config = createMockConfig()
       const code = generateWalletModulesCode(config)
 
-      expect(code).toContain("if (network === 'ethereum') _mod = require('@tetherto/wdk-wallet-evm-erc-4337', { with: { imports: 'bare-node-runtime/imports' } })")
+      expect(code).toContain("if (network === 'ethereum') _mod = require('@tetherto/wdk-wallet-evm-erc-4337', { with: { imports: 'bare-wdk-runtime/imports' } })")
       expect(code).toContain('if (_mod) _walletCache[network] = _mod.default || _mod')
     })
 
@@ -106,7 +106,7 @@ describe('Code Generators', () => {
 
     it('requires the module package and builds the manager', () => {
       const code = generateModuleModulesCode(withModules())
-      expect(code).toContain("const WdkP2pAddressBookRaw = require('@tetherto/wdk-p2p-address-book', { with: { imports: 'bare-node-runtime/imports' }})")
+      expect(code).toContain("const WdkP2pAddressBookRaw = require('@tetherto/wdk-p2p-address-book', { with: { imports: 'bare-wdk-runtime/imports' }})")
       expect(code).toContain("moduleManagers['addressBook'] = {")
     })
 
@@ -200,7 +200,7 @@ describe('Code Generators', () => {
       const entryPath = await generateEntryPoint(config, tempDir)
       const content = fs.readFileSync(entryPath, 'utf-8')
 
-      expect(content).toContain("require('bare-node-runtime/global')")
+      expect(content).toContain("require('bare-wdk-runtime/global')")
       expect(content).toContain("require('@tetherto/pear-wrk-wdk/worklet'")
     })
 

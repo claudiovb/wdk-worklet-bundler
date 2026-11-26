@@ -40,7 +40,7 @@ export function generateModuleModulesCode (config: ResolvedConfig): string {
 
   lines.push('// Load modules')
   for (const [pkgPath, varName] of packages) {
-    lines.push(`const ${varName}Raw = require('${pkgPath}', { with: { imports: 'bare-node-runtime/imports' }});`)
+    lines.push(`const ${varName}Raw = require('${pkgPath}', { with: { imports: 'bare-wdk-runtime/imports' }});`)
     lines.push(`const ${varName} = ${varName}Raw.default || ${varName}Raw;`)
   }
   lines.push('')

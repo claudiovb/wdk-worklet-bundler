@@ -7,7 +7,7 @@
 import { Command } from 'commander'
 import fs from 'fs'
 import path from 'path'
-import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR, JSONRPC_TRANSPORT_REMOVED } from './constants'
+import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR, JSONRPC_TRANSPORT_REMOVED, RUNTIME_OVERRIDE_PACKAGE, RUNTIME_OVERRIDE_SPEC } from './constants'
 import { printBanner } from './utils/banner'
 import { getPackageList } from './config/packages'
 import { linkPlatformsForHosts } from './bundler/linked-addons'
@@ -71,7 +71,8 @@ program
       findMissingRequiredPeers,
       detectPackageManager,
       installablePackageRoot,
-      generateInstallCommand
+      generateInstallCommand,
+      writeRuntimeOverride
     } = await import('./validators/dependencies')
     const { generateBundle, generateSourceFiles } = await import('./bundler')
 
@@ -158,6 +159,13 @@ program
 
         if (shouldInstall) {
           console.log('\n📥 Installing missing dependencies...\n')
+
+          // The override must be in package.json before the install resolves
+          // the wallet packages' own bare-node-runtime dependency.
+          if (writeRuntimeOverride(config.projectRoot)) {
+            console.log(`  ✓ package.json: override ${RUNTIME_OVERRIDE_PACKAGE} → ${RUNTIME_OVERRIDE_SPEC}\n`)
+          }
+
           const result = installDependencies(validation.missing, config.projectRoot, {
             verbose: options.verbose
           })

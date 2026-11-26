@@ -37,7 +37,7 @@ export function generateWalletModulesCode (config: ResolvedConfig): string {
   lines.push('let WDK = null')
   lines.push('let wdkLoadError = null')
   lines.push('try {')
-  lines.push("  const _wdkModule = require('@tetherto/wdk', { with: { imports: 'bare-node-runtime/imports' } })")
+  lines.push("  const _wdkModule = require('@tetherto/wdk', { with: { imports: 'bare-wdk-runtime/imports' } })")
   lines.push('  WDK = _wdkModule.default || _wdkModule.WDK || _wdkModule')
   lines.push('} catch (_err) {')
   lines.push('  wdkLoadError = _err')
@@ -65,7 +65,7 @@ export function generateWalletModulesCode (config: ResolvedConfig): string {
   lines.push("  if (_walletCache[network]) return _walletCache[network]")
   lines.push('  let _mod')
   for (const { network, pkg } of networkPackages) {
-    lines.push(`  if (network === '${network}') _mod = require('${pkg}', { with: { imports: 'bare-node-runtime/imports' } })`)
+    lines.push(`  if (network === '${network}') _mod = require('${pkg}', { with: { imports: 'bare-wdk-runtime/imports' } })`)
   }
   lines.push('  if (_mod) _walletCache[network] = _mod.default || _mod')
   lines.push('  return _walletCache[network] || null')

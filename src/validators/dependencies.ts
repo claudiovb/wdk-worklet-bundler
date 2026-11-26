@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
+import { RUNTIME_OVERRIDE_PACKAGE, RUNTIME_OVERRIDE_SPEC } from '../constants'
 
 interface PackageJson {
   name: string
@@ -414,6 +415,28 @@ export function generateInstallCommand (
     default:
       return `npm install ${packages.join(' ')}`
   }
+}
+
+/**
+ * Write the npm override that redirects `bare-node-runtime` to
+ * `bare-wdk-runtime` into the project's package.json, creating the file when
+ * there is none. An override the project already sets for that package is
+ * left as it is.
+ *
+ * @returns Whether package.json was written.
+ * @throws {SyntaxError} If package.json exists and is not valid JSON.
+ */
+export function writeRuntimeOverride (projectRoot: string): boolean {
+  const pkgPath = path.join(projectRoot, 'package.json')
+  const source = fs.existsSync(pkgPath) ? fs.readFileSync(pkgPath, 'utf-8') : '{}'
+  const pkg = JSON.parse(source) as { overrides?: Record<string, unknown> }
+
+  if (pkg.overrides?.[RUNTIME_OVERRIDE_PACKAGE] !== undefined) return false
+
+  pkg.overrides = { ...pkg.overrides, [RUNTIME_OVERRIDE_PACKAGE]: RUNTIME_OVERRIDE_SPEC }
+  const indent = /^([ \t]+)"/m.exec(source)?.[1] ?? '  '
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, indent) + '\n')
+  return true
 }
 
 export interface InstallResult {

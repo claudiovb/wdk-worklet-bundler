@@ -10,6 +10,7 @@ import {
   generateUninstallCommand,
   installDependencies,
   uninstallDependencies,
+  writeRuntimeOverride,
   checkOptionalPeerDependencies,
   findMissingRequiredPeers,
   findMissingOptionalPeers,
@@ -644,6 +645,68 @@ describe('Dependency Validator', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain('Cannot auto-install local paths')
+    })
+  })
+
+  describe('writeRuntimeOverride', () => {
+    const pkgPath = (): string => path.join(tempDir, 'package.json')
+
+    it('should add the override to an existing package.json and keep its other fields', () => {
+      fs.writeFileSync(pkgPath(), '{\n  "name": "app",\n  "version": "1.0.0"\n}\n')
+
+      const written = writeRuntimeOverride(tempDir)
+
+      expect(written).toBe(true)
+      expect(fs.readFileSync(pkgPath(), 'utf-8')).toBe(
+        '{\n  "name": "app",\n  "version": "1.0.0",\n  "overrides": {\n    "bare-node-runtime": "npm:bare-wdk-runtime@^3.0.1"\n  }\n}\n'
+      )
+    })
+
+    it('should create package.json when the project has none', () => {
+      const written = writeRuntimeOverride(tempDir)
+
+      expect(written).toBe(true)
+      expect(fs.readFileSync(pkgPath(), 'utf-8')).toBe(
+        '{\n  "overrides": {\n    "bare-node-runtime": "npm:bare-wdk-runtime@^3.0.1"\n  }\n}\n'
+      )
+    })
+
+    it('should keep the other overrides of the project and its indentation', () => {
+      fs.writeFileSync(pkgPath(), '{\n\t"name": "app",\n\t"overrides": {\n\t\t"ws": "8.18.0"\n\t}\n}\n')
+
+      const written = writeRuntimeOverride(tempDir)
+
+      expect(written).toBe(true)
+      expect(fs.readFileSync(pkgPath(), 'utf-8')).toBe(
+        '{\n\t"name": "app",\n\t"overrides": {\n\t\t"ws": "8.18.0",\n\t\t"bare-node-runtime": "npm:bare-wdk-runtime@^3.0.1"\n\t}\n}\n'
+      )
+    })
+
+    it('should not write the override a second time', () => {
+      writeRuntimeOverride(tempDir)
+      const afterFirst = fs.readFileSync(pkgPath(), 'utf-8')
+
+      const written = writeRuntimeOverride(tempDir)
+
+      expect(written).toBe(false)
+      expect(fs.readFileSync(pkgPath(), 'utf-8')).toBe(afterFirst)
+    })
+
+    it('should leave an override the project already sets for the package', () => {
+      const source = '{\n  "overrides": {\n    "bare-node-runtime": "npm:bare-wdk-runtime@3.0.1"\n  }\n}\n'
+      fs.writeFileSync(pkgPath(), source)
+
+      const written = writeRuntimeOverride(tempDir)
+
+      expect(written).toBe(false)
+      expect(fs.readFileSync(pkgPath(), 'utf-8')).toBe(source)
+    })
+
+    it('should throw when package.json is not valid JSON', () => {
+      fs.writeFileSync(pkgPath(), '{ not json')
+
+      expect(() => writeRuntimeOverride(tempDir)).toThrow(SyntaxError)
+      expect(fs.readFileSync(pkgPath(), 'utf-8')).toBe('{ not json')
     })
   })
 

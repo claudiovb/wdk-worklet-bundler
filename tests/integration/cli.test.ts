@@ -100,7 +100,7 @@ module.exports = {
 
       mockPackage('@tetherto/wdk-wallet-evm-erc-4337')
       mockPackage('@tetherto/wdk')
-      mockPackage('bare-node-runtime')
+      mockPackage('bare-wdk-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
 
       const output = runCli('validate')
@@ -170,7 +170,7 @@ module.exports = {
       mockPackageFiles('@tetherto/wdk', {
         'index.js': 'module.exports = class WDK {}\n'
       })
-      mockPackageFiles('bare-node-runtime', {
+      mockPackageFiles('bare-wdk-runtime', {
         'global.js': 'module.exports = {}\n',
         'imports.json': '{}\n'
       })
@@ -241,6 +241,36 @@ module.exports = {
       expect(output).toContain('Installing missing dependencies')
     })
 
+    it('should write the runtime override into package.json before installing with npm', () => {
+      const config = `
+module.exports = {
+  networks: {
+    ethereum: {
+      package: './local-wdk-module',
+    },
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ name: 'test-project', version: '1.0.0' })
+      )
+      mockPackage('@tetherto/wdk')
+      mockPackage('bare-wdk-runtime')
+      mockPackage('@tetherto/pear-wrk-wdk')
+
+      const output = runCli('generate --install')
+      const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf-8')) as unknown
+
+      expect(output).toContain('package.json: override bare-node-runtime → npm:bare-wdk-runtime@^3.0.1')
+      expect(pkg).toEqual({
+        name: 'test-project',
+        version: '1.0.0',
+        overrides: { 'bare-node-runtime': 'npm:bare-wdk-runtime@^3.0.1' }
+      })
+    })
+
     it('should warn about local paths that cannot be auto-installed', () => {
       const config = `
 module.exports = {
@@ -253,7 +283,7 @@ module.exports = {
 `
       fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
       mockPackage('@tetherto/wdk')
-      mockPackage('bare-node-runtime')
+      mockPackage('bare-wdk-runtime')
 
       const output = runCli('generate --install')
 
@@ -274,7 +304,7 @@ module.exports = {
 
       mockPackage('@tetherto/wdk-wallet-evm-erc-4337')
       mockPackage('@tetherto/wdk')
-      mockPackage('bare-node-runtime')
+      mockPackage('bare-wdk-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
 
       const output = runCli('generate --dry-run')
@@ -299,7 +329,7 @@ module.exports = {
       fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
       mockPackage('@tetherto/wdk-wallet-evm-erc-4337')
       mockPackage('@tetherto/wdk')
-      mockPackage('bare-node-runtime')
+      mockPackage('bare-wdk-runtime')
       mockPackage('@tetherto/pear-wrk-wdk')
 
       const output = runCli('generate --dry-run --link-addons')
@@ -404,7 +434,7 @@ module.exports = {
 
       mockPackage('@tetherto/wdk-wallet-evm-erc-4337')
       mockPackage('@tetherto/wdk')
-      mockPackage('bare-node-runtime')
+      mockPackage('bare-wdk-runtime')
 
       const output = runCli('validate -c custom/my-config.js')
 

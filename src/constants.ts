@@ -12,6 +12,11 @@ export const JSONRPC_TRANSPORT_REMOVED =
   "the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). " +
   'It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.'
 
+// The published WDK packages import bare-node-runtime. Until they import
+// bare-wdk-runtime themselves (tetherto/wdk#133), an override redirects it.
+export const RUNTIME_OVERRIDE_PACKAGE = 'bare-node-runtime'
+export const RUNTIME_OVERRIDE_SPEC = 'npm:bare-wdk-runtime@^3.0.1'
+
 export const DEFAULT_SWIFT_TARGET = 'app'
 export const DEFAULT_ADDONS_YML_PATH = './ios-addons/addons.yml'
 

@@ -19,7 +19,7 @@ export async function generateEntryPoint (config: ResolvedConfig, outputDir: str
 // Generated at: ${new Date().toISOString()}
 // DO NOT EDIT MANUALLY
 
-require('bare-node-runtime/global');
+require('bare-wdk-runtime/global');
 // Handle unhandled promise rejections and exceptions
 if (typeof Bare !== 'undefined' && Bare.on) {
   Bare.on('unhandledRejection', (error) => {
@@ -35,7 +35,7 @@ if (typeof Bare !== 'undefined' && Bare.on) {
 
 
 const { IPC: BareIPC } = BareKit
-const { HRPC, registerRpcHandlers, utils } = require('@tetherto/pear-wrk-wdk/worklet', { with: { imports: 'bare-node-runtime/imports' }});
+const { HRPC, registerRpcHandlers, utils } = require('@tetherto/pear-wrk-wdk/worklet', { with: { imports: 'bare-wdk-runtime/imports' }});
 const { logger } = utils;
 ${handleLeakCheckCode}
 // ============================================================
