@@ -15,4 +15,7 @@ jobs:
     steps:
       - uses: holepunchto/actions/node-base@v1
       - run: npm run build
+      # Release candidates go to the `next` dist-tag so `latest` stays on the LTS line
       - uses: holepunchto/actions/publish@v1
+        with:
+          tag: ${{ contains(github.ref_name, '-rc.') && 'next' || 'latest' }}
