@@ -84,7 +84,7 @@ export interface WdkBundleConfig {
   }
 
   /** Transport mechanism for worklet communication */
-  transport?: 'hrpc' | 'jsonrpc'
+  transport?: 'hrpc'
 
   /** Output paths */
   output?: {
@@ -107,7 +107,7 @@ export interface WdkBundleConfig {
     minify?: boolean
     sourceMaps?: boolean
     targets?: string[]
-    /** Link native addons via bare-link. Defaults to true when transport is 'jsonrpc'. */
+    /** Link native addons via bare-link. Defaults to false. */
     linkAddons?: boolean
     /** Xcode target name used in the generated addons.yml. Defaults to 'app'. */
     swiftTarget?: string

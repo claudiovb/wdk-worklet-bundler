@@ -15,11 +15,11 @@ function toVarName (pkg: string): string {
 /**
  * Generate wallet modules code section.
  *
- * WDK core is loaded eagerly (same as pear-wrk-wdk-jsonrpc).
- * Wallet packages are loaded lazily via a Proxy — this matches the pattern
- * used in pear-wrk-wdk-jsonrpc and avoids the async ES-module evaluation
- * issue that occurs when packages with "type":"module" and bare.js entries
- * are required at bundle top-level before the runtime is fully settled.
+ * WDK core is loaded eagerly.
+ * Wallet packages are loaded lazily via a Proxy — this avoids the async
+ * ES-module evaluation issue that occurs when packages with "type":"module"
+ * and bare.js entries are required at bundle top-level before the runtime is
+ * fully settled.
  */
 export function generateWalletModulesCode (config: ResolvedConfig): string {
   const lines: string[] = []
@@ -32,7 +32,7 @@ export function generateWalletModulesCode (config: ResolvedConfig): string {
     lines.push('')
   }
 
-  // WDK core — eager load with error capture (same pattern as pear-wrk-wdk-jsonrpc)
+  // WDK core — eager load with error capture
   lines.push('// Load WDK core')
   lines.push('let WDK = null')
   lines.push('let wdkLoadError = null')

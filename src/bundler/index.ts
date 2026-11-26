@@ -9,7 +9,6 @@ import { pathToFileURL } from 'url'
 import type { ResolvedConfig } from '../config/types'
 import { shouldConvertEsmToCjs } from '../config/loader'
 import { generateEntryPoint } from '../generators/entry'
-import { generateJsonRpcEntryPoint } from '../generators/entry-jsonrpc'
 import { linkAddons } from './addons'
 import { linkPlatformsForHosts } from './linked-addons'
 import { packBundle, type EsmToCjsStats } from './pack'
@@ -113,8 +112,7 @@ export async function generateBundle (
 
   const generatedDir = path.join(config.projectRoot, DEFAULT_OUTPUT_DIR)
 
-  const isJsonRpc = config.transport === 'jsonrpc'
-  const shouldLinkAddons = config.options?.linkAddons ?? isJsonRpc
+  const shouldLinkAddons = config.options?.linkAddons ?? false
 
   if (dryRun) {
     log(`Dry run - would generate (transport: ${config.transport ?? 'hrpc'}):`)
@@ -156,10 +154,8 @@ export async function generateBundle (
         throw new Error(`Artifacts not found at ${entryPath}. Run without --skip-generation first.`)
       }
     } else {
-      if (verbose) log(`  Generating ${isJsonRpc ? 'JSON-RPC' : 'HRPC'} worklet entry point...`)
-      entryPath = isJsonRpc
-        ? await generateJsonRpcEntryPoint(config, generatedDir)
-        : await generateEntryPoint(config, generatedDir)
+      if (verbose) log('  Generating HRPC worklet entry point...')
+      entryPath = await generateEntryPoint(config, generatedDir)
       if (verbose) log(`    Entry: ${entryPath}`)
     }
 
@@ -262,7 +258,7 @@ export async function generateBundle (
     const bundleSize = writeBundleFile(config.resolvedOutput.bundle, packed.bundle).length
     if (verbose) log(`    Bundle: ${config.resolvedOutput.bundle} (${packed.files} files, id ${packed.id})`)
 
-    // Step 4: Link native addons (if enabled, or always for jsonrpc unless explicitly disabled)
+    // Step 4: Link native addons (if enabled)
     if (shouldLinkAddons) {
       if (verbose) log('  Linking native addons...')
       const addonsResult = await linkAddons(config, { verbose, silent, bundle: packed.bundle })
@@ -349,12 +345,9 @@ export async function generateSourceFiles (
 ): Promise<{ entryPath: string }> {
   const generatedDir = path.join(config.projectRoot, DEFAULT_OUTPUT_DIR)
 
-  // Generate worklet entry point (dispatch by transport)
-  const isJsonRpc = config.transport === 'jsonrpc'
-  if (options.verbose) console.log(`  Generating ${isJsonRpc ? 'JSON-RPC' : 'HRPC'} worklet entry point...`)
-  const entryPath = isJsonRpc
-    ? await generateJsonRpcEntryPoint(config, generatedDir)
-    : await generateEntryPoint(config, generatedDir)
+  // Generate worklet entry point
+  if (options.verbose) console.log('  Generating HRPC worklet entry point...')
+  const entryPath = await generateEntryPoint(config, generatedDir)
 
   // Generate index.js for easy importing (note: bundle won't exist yet in source-only mode)
   // Users will need to pack first, but we create the index anyway

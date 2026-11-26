@@ -3,13 +3,14 @@ export const DEFAULT_BUNDLE_FILENAME = 'wdk-worklet.bundle.js'
 export const DEFAULT_TYPES_FILENAME = 'index.d.ts'
 export const DEFAULT_ENTRY_FILENAME = 'wdk-worklet.generated.js'
 
-export const DEFAULT_BUNDLE_FILENAME_JSONRPC = 'wdk-worklet.bundle'
-
 export const DEFAULT_BUNDLE_PATH = `./.wdk-bundle/${DEFAULT_BUNDLE_FILENAME}`
-export const DEFAULT_BUNDLE_PATH_JSONRPC = `./.wdk-bundle/${DEFAULT_BUNDLE_FILENAME_JSONRPC}`
 export const DEFAULT_TYPES_PATH = `./${DEFAULT_OUTPUT_DIR}/${DEFAULT_TYPES_FILENAME}`
 
 export const DEFAULT_BUNDLE_BUILD_HOSTS = ['ios-arm64', 'ios-arm64-simulator', 'ios-x64-simulator', 'android-arm64', 'android-arm', 'android-ia32', 'android-x64']
+
+export const JSONRPC_TRANSPORT_REMOVED =
+  "the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). " +
+  'It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.'
 
 export const DEFAULT_SWIFT_TARGET = 'app'
 export const DEFAULT_ADDONS_YML_PATH = './ios-addons/addons.yml'

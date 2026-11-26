@@ -4,6 +4,7 @@
 
 import Ajv from 'ajv'
 import type { WdkBundleConfig } from './types'
+import { JSONRPC_TRANSPORT_REMOVED } from '../constants'
 
 export const configSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
@@ -86,7 +87,7 @@ export const configSchema = {
     },
     transport: {
       type: 'string',
-      enum: ['hrpc', 'jsonrpc'],
+      enum: ['hrpc'],
       description: 'Transport mechanism for worklet communication'
     },
     output: {
@@ -159,8 +160,22 @@ export function validateConfigSchema (config: unknown): asserts config is WdkBun
  * Run all validations
  */
 export function validateConfig (config: unknown): asserts config is WdkBundleConfig {
+  rejectJsonRpcTransport(config)
   validateConfigSchema(config)
   rejectRemovedPlatformsOption(config)
+}
+
+/**
+ * The `jsonrpc` transport exists only on the LTS line. The schema's enum
+ * would reject it with a generic message, so it fails first, with the pointer
+ * to the line that keeps it.
+ *
+ * @throws {Error} If the config sets `transport: 'jsonrpc'`.
+ */
+function rejectJsonRpcTransport (config: unknown): void {
+  if ((config as { transport?: unknown } | null)?.transport === 'jsonrpc') {
+    throw new Error(`Invalid configuration:\n  - /transport: ${JSONRPC_TRANSPORT_REMOVED}`)
+  }
 }
 
 /**

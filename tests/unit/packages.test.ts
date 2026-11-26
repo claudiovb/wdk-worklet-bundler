@@ -16,7 +16,7 @@ describe('getPackageList', () => {
   })
 
   it('includes the Pear Worklet runtime regardless of transport', () => {
-    for (const transport of ['hrpc', 'jsonrpc'] as const) {
+    for (const transport of ['hrpc'] as const) {
       expect(getPackageList(makeConfig({ transport }))).toContain('@tetherto/pear-wrk-wdk')
     }
   })

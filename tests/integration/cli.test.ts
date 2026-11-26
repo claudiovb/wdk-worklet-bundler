@@ -150,10 +150,9 @@ module.exports = {
       expect(output).toContain('No wdk.config.js found')
     })
 
-    it('should produce a jsonrpc bundle containing configured modules', () => {
+    it('should produce a bundle containing configured modules', () => {
       const config = `
 module.exports = {
-  transport: 'jsonrpc',
   networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
   modules: {
     addressBook: {
@@ -182,8 +181,9 @@ module.exports = {
         'index.js': 'exports.createWorkletModule = (ctx) => ({ ctx, list: () => [] })\n'
       })
       mockPackageFiles('@tetherto/pear-wrk-wdk', {
-        'jsonrpc.js': `
-exports.registerJsonRpcHandlers = () => {};
+        'worklet.js': `
+exports.HRPC = class HRPC {};
+exports.registerRpcHandlers = () => {};
 exports.utils = { logger: { info: () => {}, error: () => {} } };
 `
       })
@@ -345,6 +345,43 @@ module.exports = {
       const output = runCli('generate --dry-run')
 
       expect(output).toContain('/options/platforms: this option was removed')
+      expect(output).not.toContain('Checking core dependencies')
+    })
+
+    it('should reject a config with the jsonrpc transport and point to the LTS line', () => {
+      const config = `
+module.exports = {
+  transport: 'jsonrpc',
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+
+      const output = runCli('generate --dry-run')
+
+      expect(output).toContain("/transport: the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.")
+      expect(output).not.toContain('Checking core dependencies')
+    })
+
+    it('should reject --transport jsonrpc and point to the LTS line', () => {
+      const config = `
+module.exports = {
+  networks: {
+    ethereum: {
+      package: '@tetherto/wdk-wallet-evm-erc-4337',
+    },
+  },
+};
+`
+      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
+
+      const output = runCli('generate --dry-run --transport jsonrpc')
+
+      expect(output).toContain("Invalid transport: the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.")
       expect(output).not.toContain('Checking core dependencies')
     })
   })

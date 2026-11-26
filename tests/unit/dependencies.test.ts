@@ -533,7 +533,7 @@ describe('Dependency Validator', () => {
   describe('installablePackageRoot', () => {
     it('strips subpaths from scoped specifiers', () => {
       expect(installablePackageRoot('@tetherto/pear-wrk-wdk/worklet')).toBe('@tetherto/pear-wrk-wdk')
-      expect(installablePackageRoot('@tetherto/pear-wrk-wdk/jsonrpc')).toBe('@tetherto/pear-wrk-wdk')
+      expect(installablePackageRoot('@tetherto/pear-wrk-wdk/diagnostics/handle-leak-check')).toBe('@tetherto/pear-wrk-wdk')
     })
 
     it('strips subpaths from unscoped specifiers', () => {

@@ -7,7 +7,7 @@
 import { Command } from 'commander'
 import fs from 'fs'
 import path from 'path'
-import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR } from './constants'
+import { DEFAULT_BUNDLE_BUILD_HOSTS, DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_OUTPUT_DIR, JSONRPC_TRANSPORT_REMOVED } from './constants'
 import { printBanner } from './utils/banner'
 import { getPackageList } from './config/packages'
 import { linkPlatformsForHosts } from './bundler/linked-addons'
@@ -59,9 +59,9 @@ program
   .option('--no-types', 'Skip TypeScript declaration generation')
   .option('--source-only', 'Only generate source files (skip bare-pack)')
   .option('--skip-generation', 'Skip artifact generation and use existing files')
-  .option('--transport <transport>', 'Transport type: hrpc (default) or jsonrpc')
-  .option('--link-addons', 'Link native addons via bare-link (default: true for jsonrpc)')
-  .option('--skip-link-addons', 'Skip bare-link addon linking (overrides jsonrpc default)')
+  .option('--transport <transport>', 'Transport type: hrpc (default)')
+  .option('--link-addons', 'Link native addons via bare-link')
+  .option('--skip-link-addons', 'Skip bare-link addon linking')
   .option('--no-defer-optional-peers', 'Fail on missing optional peer deps (e.g. Ledger support) instead of deferring them to runtime')
   .action(async (options: GenerateOptions) => {
     const { loadConfig } = await import('./config/loader')
@@ -113,11 +113,15 @@ program
 
       // Apply CLI transport override
       if (options.transport) {
-        if (!['hrpc', 'jsonrpc'].includes(options.transport)) {
-          console.error(`\n❌ Invalid transport '${options.transport}'. Use 'hrpc' or 'jsonrpc'`)
+        if (options.transport === 'jsonrpc') {
+          console.error(`\n❌ Invalid transport: ${JSONRPC_TRANSPORT_REMOVED}`)
           process.exit(1)
         }
-        config = { ...config, transport: options.transport as 'hrpc' | 'jsonrpc' }
+        if (options.transport !== 'hrpc') {
+          console.error(`\n❌ Invalid transport '${options.transport}'. Use 'hrpc'`)
+          process.exit(1)
+        }
+        config = { ...config, transport: options.transport }
       }
 
       // Apply CLI addon overrides
@@ -292,7 +296,7 @@ program
       if (options.types !== false) {
         console.log(`  Types: ${result.typesPath}`)
       }
-      const shouldLinkAddons = config.options?.linkAddons ?? (config.transport === 'jsonrpc')
+      const shouldLinkAddons = config.options?.linkAddons ?? false
       if (shouldLinkAddons) {
         const platforms = linkPlatformsForHosts(config.options?.targets ?? DEFAULT_BUNDLE_BUILD_HOSTS)
         for (const p of platforms) {

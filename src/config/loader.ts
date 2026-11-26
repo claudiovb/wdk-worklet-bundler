@@ -7,7 +7,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import type { WdkBundleConfig, ResolvedConfig } from './types'
 import { validateConfig } from './schema'
-import { DEFAULT_BUNDLE_PATH, DEFAULT_BUNDLE_PATH_JSONRPC, DEFAULT_TYPES_PATH, DEFAULT_IOS_ADDONS_DIR, DEFAULT_MACOS_ADDONS_DIR, DEFAULT_ANDROID_ADDONS_DIR, DEFAULT_LINUX_ADDONS_DIR, DEFAULT_WINDOWS_ADDONS_DIR, DEFAULT_ADDONS_YML_PATH } from '../constants'
+import { DEFAULT_BUNDLE_PATH, DEFAULT_TYPES_PATH, DEFAULT_IOS_ADDONS_DIR, DEFAULT_MACOS_ADDONS_DIR, DEFAULT_ANDROID_ADDONS_DIR, DEFAULT_LINUX_ADDONS_DIR, DEFAULT_WINDOWS_ADDONS_DIR, DEFAULT_ADDONS_YML_PATH } from '../constants'
 
 const CONFIG_FILES = [
   'wdk.config.js',
@@ -95,11 +95,10 @@ export async function loadConfig (configPath?: string): Promise<ResolvedConfig> 
   const projectRoot = path.dirname(filepath)
 
   // Resolve output paths
-  const defaultBundlePath = config.transport === 'jsonrpc' ? DEFAULT_BUNDLE_PATH_JSONRPC : DEFAULT_BUNDLE_PATH
   const resolvedOutput = {
     bundle: path.resolve(
       projectRoot,
-      config.output?.bundle || defaultBundlePath
+      config.output?.bundle || DEFAULT_BUNDLE_PATH
     ),
     types: path.resolve(
       projectRoot,

@@ -4,7 +4,6 @@ import path from 'path'
 import vm from 'vm'
 import { EventEmitter } from 'events'
 import { generateEntryPoint } from '../../src/generators/entry'
-import { generateJsonRpcEntryPoint } from '../../src/generators/entry-jsonrpc'
 import type { ResolvedConfig } from '../../src/config/types'
 
 interface Runtime {
@@ -17,10 +16,7 @@ interface Agent {
   resume: jest.Mock
 }
 
-describe.each([
-  ['hrpc', generateEntryPoint],
-  ['jsonrpc', generateJsonRpcEntryPoint]
-] as const)('%s lifecycle', (_transport, generate) => {
+describe('hrpc lifecycle', () => {
   let dir: string
 
   beforeEach(() => {
@@ -49,18 +45,17 @@ describe.each([
         addonsYml: path.join(dir, 'addons.yml')
       }
     }
-    const entry = await generate(config, dir)
+    const entry = await generateEntryPoint(config, dir)
     const bare = new EventEmitter()
     const agents = Array.from({ length: 2 }, () => ({ suspend: jest.fn(), resume: jest.fn() }))
     const logger = { info: jest.fn(), error: jest.fn() }
     const requireStub = (id: string): unknown => {
       if (id === 'bare-node-runtime/global') return {}
       if (id === '@tetherto/wdk') return class WDK {}
-      if (id === '@tetherto/pear-wrk-wdk/worklet' || id === '@tetherto/pear-wrk-wdk/jsonrpc') {
+      if (id === '@tetherto/pear-wrk-wdk/worklet') {
         return {
           HRPC: class HRPC {},
           registerRpcHandlers: (): void => {},
-          registerJsonRpcHandlers: (): void => {},
           utils: { logger }
         }
       }

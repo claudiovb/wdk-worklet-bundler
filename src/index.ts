@@ -24,6 +24,5 @@ export type { PackBundleOptions, PackBundleResult, BarePackOptions, EsmToCjsStat
 
 // Generators
 export { generateEntryPoint } from './generators/entry'
-export { generateJsonRpcEntryPoint } from './generators/entry-jsonrpc'
 export { generateAddonsYml } from './generators/addons-yml'
 export { generateWalletModulesCode } from './generators/wallet-modules'

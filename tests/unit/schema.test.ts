@@ -43,6 +43,18 @@ describe('Config Schema Validation', () => {
       )
     })
 
+    it('should reject the jsonrpc transport with the pointer to the LTS line', () => {
+      const config = {
+        networks: { eth: { package: 'pkg' } },
+        transport: 'jsonrpc'
+      }
+
+      expect(() => validateConfig(config)).toThrow(
+        "Invalid configuration:\n  - /transport: the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). " +
+        'It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.'
+      )
+    })
+
     it('should fail if networks is missing', () => {
       const config = {
         options: {}
