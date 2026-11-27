@@ -60,14 +60,15 @@ describe('generateHandleLeakCheckCode', () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
-  it('returns empty string when options.handleLeakCheck is not set', () => {
+  it('returns empty string and does not warn when options.handleLeakCheck is not set, even without pear-wrk-wdk installed', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
     const config = createMockConfig()
-    expect(generateHandleLeakCheckCode(config)).toBe('')
-  })
 
-  it('returns empty string when options is set but handleLeakCheck is omitted', () => {
-    const config = createMockConfig({ options: { minify: true } })
-    expect(generateHandleLeakCheckCode(config)).toBe('')
+    const code = generateHandleLeakCheckCode(config)
+
+    expect(code).toBe('')
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 
   it('emits the require and a bare registerHandleLeakCheck() call when enabled with true', () => {
@@ -110,16 +111,6 @@ describe('generateHandleLeakCheckCode', () => {
 
     expect(code).toBe('')
     expect(warnSpy).toHaveBeenCalledTimes(1)
-    warnSpy.mockRestore()
-  })
-
-  it('does not warn when handleLeakCheck is not set, even without pear-wrk-wdk installed', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-    const config = createMockConfig()
-
-    generateHandleLeakCheckCode(config)
-
-    expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 })

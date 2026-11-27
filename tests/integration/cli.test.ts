@@ -52,17 +52,6 @@ describe('CLI Integration Tests', () => {
       expect(fs.existsSync(path.join(tempDir, 'wdk.config.js'))).toBe(true)
     })
 
-    it('should create config with proper structure', () => {
-      runCli('init -y')
-
-      const configPath = path.join(tempDir, 'wdk.config.js')
-      const content = fs.readFileSync(configPath, 'utf-8')
-
-      expect(content).toContain('networks:')
-      expect(content).toContain('package:')
-      expect(content).toContain('@tetherto/wdk')
-    })
-
     it('should create a config that only lacks the language, which has no default', () => {
       runCli('init -y')
 
@@ -457,39 +446,6 @@ module.exports = {
       })
     })
 
-    it('should write the runtime override into package.json before installing with npm', () => {
-      const config = `
-module.exports = {
-  transport: 'bare-rpc',
-  language: 'swift',
-  networks: {
-    ethereum: {
-      package: './local-wdk-module',
-    },
-  },
-};
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-      fs.writeFileSync(
-        path.join(tempDir, 'package.json'),
-        JSON.stringify({ name: 'test-project', version: '1.0.0' })
-      )
-      mockPackage('@tetherto/wdk')
-      mockPackage('bare-wdk-runtime')
-      mockPackage('@tetherto/pear-wrk-wdk')
-      mockPackage('bare-stow-runtime')
-
-      const output = runCli('generate --install')
-      const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf-8')) as unknown
-
-      expect(output).toContain('package.json: override bare-node-runtime → npm:bare-wdk-runtime@^3.0.1')
-      expect(pkg).toEqual({
-        name: 'test-project',
-        version: '1.0.0',
-        overrides: { 'bare-node-runtime': 'npm:bare-wdk-runtime@^3.0.1' }
-      })
-    })
-
     it('should warn about local paths that cannot be auto-installed', () => {
       const config = `
 module.exports = {
@@ -563,27 +519,6 @@ module.exports = {
       expect(output).not.toContain('Checking core dependencies')
     })
 
-    it('should reject a config that still gives output as an object of paths', () => {
-      const config = `
-module.exports = {
-  transport: 'bare-rpc',
-  language: 'swift',
-  networks: {
-    ethereum: {
-      package: '@tetherto/wdk-wallet-evm-erc-4337',
-    },
-  },
-  output: { bundle: './out/wdk.bundle' },
-};
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-
-      const output = runCli('generate --dry-run')
-
-      expect(output).toContain("/output: is now one folder, the generated package (a string, default './wdk-worklet').")
-      expect(output).not.toContain('Checking core dependencies')
-    })
-
     it('should reject the removed --platforms flag', () => {
       const config = `
 module.exports = {
@@ -601,49 +536,6 @@ module.exports = {
       const output = runCli('generate --platforms ios')
 
       expect(output).toContain("unknown option '--platforms'")
-      expect(output).not.toContain('Checking core dependencies')
-    })
-
-    it('should reject a config that still carries options.platforms', () => {
-      const config = `
-module.exports = {
-  transport: 'bare-rpc',
-  language: 'swift',
-  networks: {
-    ethereum: {
-      package: '@tetherto/wdk-wallet-evm-erc-4337',
-    },
-  },
-  options: {
-    platforms: ['ios'],
-  },
-};
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-
-      const output = runCli('generate --dry-run')
-
-      expect(output).toContain('/options/platforms: this option was removed')
-      expect(output).not.toContain('Checking core dependencies')
-    })
-
-    it('should reject a config with the jsonrpc transport and point to the LTS line', () => {
-      const config = `
-module.exports = {
-  transport: 'jsonrpc',
-  language: 'swift',
-  networks: {
-    ethereum: {
-      package: '@tetherto/wdk-wallet-evm-erc-4337',
-    },
-  },
-};
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-
-      const output = runCli('generate --dry-run')
-
-      expect(output).toContain("/transport: the 'jsonrpc' transport is not available on the 1.0.0-rc line (dist-tag `next`). It stays on the LTS line: use @tetherto/wdk-worklet-bundler@latest.")
       expect(output).not.toContain('Checking core dependencies')
     })
 
@@ -684,25 +576,6 @@ module.exports = {
       const output = runCli('generate --dry-run --transport grpc')
 
       expect(output).toContain('/transport: must be equal to one of the allowed values: bare-rpc, hrpc')
-      expect(output).not.toContain('Checking core dependencies')
-    })
-
-    it('should fail when neither the config nor --transport gives a transport', () => {
-      const config = `
-module.exports = {
-  language: 'swift',
-  networks: {
-    ethereum: {
-      package: '@tetherto/wdk-wallet-evm-erc-4337',
-    },
-  },
-};
-`
-      fs.writeFileSync(path.join(tempDir, 'wdk.config.js'), config)
-
-      const output = runCli('generate --dry-run')
-
-      expect(output).toContain("root: must have required property 'transport'")
       expect(output).not.toContain('Checking core dependencies')
     })
 

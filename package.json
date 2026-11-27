@@ -47,9 +47,20 @@
     "esbuild": "0.28.1"
   },
   "devDependencies": {
+    "@tetherto/pear-wrk-wdk": "github:claudiovb/pear-wrk-wdk#1c72715",
+    "@tetherto/wdk": "1.0.0-beta.23",
+    "@tetherto/wdk-wallet-btc": "1.0.0-beta.18",
+    "@tetherto/wdk-wallet-evm": "1.0.0-beta.27",
     "@types/jest": "29.5.14",
     "@types/node": "22.10.2",
+    "bare-abort-controller": "1.1.2",
     "bare-bundle": "^1.12.0",
+    "bare-crypto": "1.16.1",
+    "bare-rpc": "2.0.0",
+    "bare-sidecar": "0.5.17",
+    "bare-stow-host": "0.2.0",
+    "bare-stow-runtime": "0.1.2",
+    "bare-wdk-runtime": "3.0.1",
     "eslint": "10.5.0",
     "jest": "29.7.0",
     "ts-jest": "29.2.5",
@@ -57,6 +68,9 @@
     "typescript": "5.7.2",
     "typescript-eslint": "8.61.1",
     "unrun": "0.3.0"
+  },
+  "overrides": {
+    "bare-node-runtime": "npm:bare-wdk-runtime@^3.0.1"
   },
   "engines": {
     "node": "^22.21.0 || >=24.9.0"

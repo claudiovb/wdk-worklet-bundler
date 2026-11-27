@@ -6,6 +6,9 @@ coverage/
 
 dist/
 
+# Intermediate files of the bundler, when it runs in this repo (tests)
+.wdk/
+
 # IDE
 .vscode/
 .idea/

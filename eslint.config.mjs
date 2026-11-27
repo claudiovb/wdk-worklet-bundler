@@ -2,7 +2,7 @@ import tseslint from 'typescript-eslint'
 
 export default [
   {
-    ignores: ['dist/**', 'coverage/**']
+    ignores: ['dist/**', 'coverage/**', '.wdk/**']
   },
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({
     ...config,

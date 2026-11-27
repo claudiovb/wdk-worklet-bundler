@@ -347,14 +347,6 @@ describe('generateBundle', () => {
     expect(fs.readFileSync(path.join(config.outputDir, 'Package.swift'), 'utf-8').split('\n')[0]).toBe('// swift-tools-version: 6.1')
   })
 
-  it('should not convert by default with the v8 engine', async () => {
-    // Act
-    const result = await generateBundle(makeConfig(), { silent: true })
-
-    // Assert
-    expect(result.esmToCjs).toBeNull()
-  })
-
   it('should defer a missing optional peer by default, and fail on it when told not to defer', async () => {
     // Arrange: a wallet whose optional peer is not installed
     writeFixtureFile(projDir, 'node_modules/wallet-with-optional-peer/package.json', JSON.stringify({

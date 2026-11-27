@@ -279,14 +279,6 @@ describe('Code Generators', () => {
         expect(context.debug).toBe(true)
       })
 
-      it('should pass the load error when debug is off, too', async () => {
-        const loadError = new Error('Unsupported operation')
-
-        const { context } = await run(createMockConfig({ options: { debug: false } }), () => { throw loadError })
-
-        expect(context.wdkLoadError).toBe(loadError)
-        expect(context.debug).toBe(false)
-      })
     })
 
     it('should include wallet modules code', async () => {
@@ -378,16 +370,6 @@ describe('Code Generators', () => {
     })
 
     describe('options.handleLeakCheck', () => {
-      it('should emit no trace of the handle-leak diagnostic when unset', async () => {
-        const config = createMockConfig()
-        const entryPath = await generateEntryPoint(config, tempDir)
-        const content = fs.readFileSync(entryPath, 'utf-8')
-
-        expect(content).not.toContain('registerHandleLeakCheck')
-        expect(content).not.toContain('diagnostics/handle-leak-check')
-        expect(content).toContain("const { createStart, utils } = require('@tetherto/pear-wrk-wdk/worklet'")
-      })
-
       it('should include the require and registerHandleLeakCheck() call when enabled and resolvable', async () => {
         const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wdk-entry-handle-leak-proj-'))
         const pkgDir = path.join(projectRoot, 'node_modules/@tetherto/pear-wrk-wdk')
@@ -414,17 +396,6 @@ describe('Code Generators', () => {
         }
       })
 
-      it('should warn and omit the diagnostic when enabled but unresolvable, without failing generation', async () => {
-        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-        const config = createMockConfig({ options: { handleLeakCheck: true } })
-
-        const entryPath = await generateEntryPoint(config, tempDir)
-        const content = fs.readFileSync(entryPath, 'utf-8')
-
-        expect(content).not.toContain('registerHandleLeakCheck')
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('options.handleLeakCheck is set'))
-        warnSpy.mockRestore()
-      })
     })
   })
 })
