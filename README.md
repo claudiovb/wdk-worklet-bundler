@@ -156,6 +156,35 @@ val exitCode = started.ipc.terminate()
 
 The worklet is the same for both; the transport only selects the server the bundle starts with.
 
+### Client extension
+
+A library that wraps the worklet, such as a WDK core, can add its own code to the generated client file and its own dependency to the manifest of the package. It passes a CommonJS module to `generate --client-extension`:
+
+```javascript
+module.exports = {
+  name: "wdk-core-swift",
+  languages: {
+    swift: {
+      // `context.options` holds the options of the language, such as the Kotlin package.
+      generate(context) {
+        return {
+          source: "\n@_exported import WdkCore\n",
+          dependencies: {
+            "wdk-core-swift": {
+              url: "https://github.com/tetherto/wdk-core-swift",
+              from: "0.9.0",
+              products: ["WdkCore"],
+            },
+          },
+        };
+      },
+    },
+  },
+};
+```
+
+`source` is appended to the client bare-stow generates (`Client.swift`, `Client.kt`); it does not replace it. `dependencies` are added to the ones of the client, in the form bare-stow takes for the language. The extension needs the `bare-rpc` transport and an entry for the language of the config.
+
 ## Engines
 
 `options.engine` selects the JavaScript engine of the Bare Kit build the app ships. Everything apart from `v8` is experimental.
@@ -202,6 +231,7 @@ wdk-worklet-bundler generate [options]
 - `--source-only`: Generate the entry file but skip packing.
 - `--skip-generation`: Skip the entry generation and use the existing file.
 - `--dry-run`: Print what would happen without writing files.
+- `--client-extension <path>`: A CommonJS module that adds code and dependencies to the generated `bare-rpc` client. The WDK cores pass it from their build plugin; an app does not need it. See [Client extension](#client-extension).
 - `--no-defer-optional-peers`: Fail at build time if an optional peer dependency (e.g. Ledger support) is missing, instead of deferring it to runtime. See [Optional peer dependencies](#optional-peer-dependencies).
 - `-v, --verbose`: Show verbose output.
 

@@ -245,6 +245,41 @@ module.exports = {
         expect(fs.existsSync(path.join(tempDir, '.wdk'))).toBe(false)
       })
 
+      it('should add the code of the module given with --client-extension to the generated client', () => {
+        writeProject(`
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
+  networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
+  options: { targets: ['ios-arm64'] },
+};
+`)
+        writeFixtureFile(tempDir, 'core/stow-client.js',
+          "module.exports = { name: 'wdk-core-swift', languages: { swift: { generate: () => ({ source: '\\npublic func extended() -> Bool { true }\\n' }) } } }\n")
+
+        const output = runCli('generate --client-extension core/stow-client.js')
+        const client = fs.readFileSync(path.join(tempDir, 'wdk-worklet', 'Sources/WdkWorklet/Client.swift'), 'utf-8')
+
+        expect(output).toContain('Package generated successfully')
+        expect(client.endsWith('  return RPC(ipc, handler: router)\n}\n\npublic func extended() -> Bool { true }\n')).toBe(true)
+      })
+
+      it('should fail before checking dependencies when the module of --client-extension is not an extension', () => {
+        writeProject(`
+module.exports = {
+  transport: 'bare-rpc',
+  language: 'swift',
+  networks: { ethereum: { package: '@tetherto/wdk-wallet-evm' } },
+};
+`)
+        writeFixtureFile(tempDir, 'core/stow-client.js', 'module.exports = () => ({})\n')
+
+        const output = runCli('generate --client-extension core/stow-client.js')
+
+        expect(output).toContain(`The client extension ${path.join(fs.realpathSync(tempDir), 'core', 'stow-client.js')} must export { name, languages }.`)
+        expect(output).not.toContain('Checking core dependencies')
+      })
+
       it('should fail with what is wrong when the installed pear-wrk-wdk is not the RC line', () => {
         writeProject(`
 module.exports = {

@@ -24,6 +24,7 @@ interface GenerateOptions {
   skipGeneration?: boolean
   transport?: string
   deferOptionalPeers?: boolean
+  clientExtension?: string
 }
 
 interface InitOptions {
@@ -60,6 +61,7 @@ program
   .option('--skip-generation', 'Skip artifact generation and use existing files')
   .option('--transport <transport>', 'Transport: bare-rpc or hrpc (replaces the value of the config file)')
   .option('--no-defer-optional-peers', 'Fail on missing optional peer deps (e.g. Ledger support) instead of deferring them to runtime')
+  .option('--client-extension <path>', 'CommonJS module that adds code and dependencies to the generated bare-rpc client (used by the WDK cores)')
   .action(async (options: GenerateOptions) => {
     const { loadConfig } = await import('./config/loader')
     const {
@@ -72,7 +74,7 @@ program
       writeRuntimeOverride,
       toInstallSpec
     } = await import('./validators/dependencies')
-    const { generateBundle, generateSourceFiles } = await import('./bundler')
+    const { generateBundle, generateSourceFiles, loadClientExtension } = await import('./bundler')
 
     // Track packages installed by --install for potential cleanup
     const installedPackages: string[] = []
@@ -114,6 +116,10 @@ program
       })
       console.log(`  Config: ${config.configPath}`)
       if (options.projectRoot !== undefined) console.log(`  Project root: ${config.projectRoot}`)
+
+      const clientExtension = options.clientExtension !== undefined
+        ? loadClientExtension(path.resolve(process.cwd(), options.clientExtension))
+        : undefined
 
       console.log('\n📦 Checking core dependencies...\n')
       const requiredPackages = getPackageList(config)
@@ -249,7 +255,8 @@ program
         dryRun: options.dryRun,
         verbose: options.verbose,
         skipGeneration: options.skipGeneration,
-        deferOptionalPeers: options.deferOptionalPeers
+        deferOptionalPeers: options.deferOptionalPeers,
+        clientExtension
       })
 
       if (!result.success) {

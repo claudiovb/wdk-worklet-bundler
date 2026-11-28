@@ -17,7 +17,7 @@ import path from 'path'
 import os from 'os'
 import { pathToFileURL } from 'url'
 import type Bundle from 'bare-bundle'
-import { stowBundle, type StowBundleOptions } from '../../src/bundler/stow'
+import { stowBundle, type ClientExtension, type StowBundleOptions } from '../../src/bundler/stow'
 import { readBundleFile, readStowedBundle, standInServerSource, writeFixtureFile, writeStandInPackages } from '../helpers/stow-fixture'
 
 type ModuleFactory = (
@@ -191,6 +191,106 @@ describe('stowBundle against the real bare-stow', () => {
 
       // Assert
       await expect(act).rejects.toThrow("Host 'android-arm64' is not supported by target 'bare-kit'")
+    })
+  })
+
+  describe('with a client extension', () => {
+    const SWIFT_ADDITION = '\n@_exported import WdkCore\n\npublic func extended() -> Bool { true }\n'
+    const KOTLIN_ADDITION = '\nfun extended(): Boolean = true\n'
+
+    const extension: ClientExtension = {
+      name: 'wdk-core',
+      languages: {
+        swift: {
+          generate: () => ({
+            source: SWIFT_ADDITION,
+            dependencies: {
+              'wdk-core-swift': { url: 'https://github.com/tetherto/wdk-core-swift', from: '0.9.0', products: ['WdkCore'] }
+            }
+          })
+        },
+        kotlin: {
+          generate: ({ options }) => ({
+            source: `${KOTLIN_ADDITION}// package ${String(options.package)}\n`,
+            dependencies: { 'to.tether.wdk:wdk-core': '0.9.+' }
+          })
+        }
+      }
+    }
+
+    const readClient = (out: string, file: string): string => fs.readFileSync(path.join(out, file), 'utf-8')
+
+    it('should append the code of the extension to the Swift client bare-stow generates, and add its dependency to the manifest', async () => {
+      // Arrange
+      const plain = swift({ transport: 'bare-rpc' })
+      const extended = swift({ transport: 'bare-rpc', clientExtension: extension })
+      await stowBundle(plain)
+
+      // Act
+      const result = await stowBundle(extended)
+
+      // Assert
+      const manifest = fs.readFileSync(path.join(extended.out, 'Package.swift'), 'utf-8')
+      expect(relativeFiles(extended.out, result.files)).toEqual([
+        'Sources/WdkWorklet/Harness.swift',
+        'Sources/WdkWorklet/Client.swift',
+        'Package.swift',
+        'Sources/WdkWorklet/index.bundle'
+      ])
+      expect(readClient(extended.out, 'Sources/WdkWorklet/Client.swift'))
+        .toBe(readClient(plain.out, 'Sources/WdkWorklet/Client.swift') + SWIFT_ADDITION)
+      expect(manifest).toContain('    .package(url: "https://github.com/tetherto/wdk-core-swift", .upToNextMinor(from: "0.9.0")),\n')
+      expect(manifest).toContain('        .product(name: "WdkCore", package: "wdk-core-swift"),\n')
+      expect(manifest).toContain('    .package(url: "https://github.com/holepunchto/bare-rpc-swift", from: "3.0.0"),\n')
+    })
+
+    it('should give the extension the options of the language, and add its dependency to the Kotlin module', async () => {
+      // Arrange
+      const kotlin = { name: 'kotlin', package: 'to.tether.wdk.worklet' } as const
+      const plain = swift({ language: kotlin, transport: 'bare-rpc', hosts: ['android-arm64'] })
+      const extended = swift({ language: kotlin, transport: 'bare-rpc', hosts: ['android-arm64'], clientExtension: extension })
+      await stowBundle(plain)
+
+      // Act
+      await stowBundle(extended)
+
+      // Assert
+      const clientFile = 'src/main/kotlin/to/tether/wdk/worklet/Client.kt'
+      const gradle = fs.readFileSync(path.join(extended.out, 'build.gradle'), 'utf-8')
+      expect(readClient(extended.out, clientFile))
+        .toBe(`${readClient(plain.out, clientFile)}${KOTLIN_ADDITION}// package to.tether.wdk.worklet\n`)
+      expect(gradle).toContain('  api "to.tether.wdk:wdk-core:0.9.+"\n')
+      expect(gradle).toContain('  api "com.github.holepunchto.bare-rpc-kotlin:bare-rpc-kotlin:v0.6.+"\n')
+    })
+
+    it('should fail with the hrpc transport, for which no client is generated', async () => {
+      // Arrange
+      const options = swift({ transport: 'hrpc', clientExtension: extension })
+
+      // Act
+      const packing = stowBundle(options)
+
+      // Assert
+      await expect(packing).rejects.toThrow("The client extension 'wdk-core' needs transport 'bare-rpc': no client is generated with 'hrpc'.")
+      expect(fs.existsSync(options.out)).toBe(false)
+    })
+
+    it('should fail when the extension has no generator for the language', async () => {
+      // Arrange
+      const swiftOnly: ClientExtension = { name: 'wdk-core-swift', languages: { swift: extension.languages.swift } }
+      const options = swift({
+        language: { name: 'kotlin', package: 'to.tether.wdk.worklet' },
+        transport: 'bare-rpc',
+        hosts: ['android-arm64'],
+        clientExtension: swiftOnly
+      })
+
+      // Act
+      const packing = stowBundle(options)
+
+      // Assert
+      await expect(packing).rejects.toThrow("The client extension 'wdk-core-swift' has no generator for language 'kotlin'.")
+      expect(fs.existsSync(options.out)).toBe(false)
     })
   })
 

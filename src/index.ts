@@ -13,8 +13,8 @@ export { validateDependencies, installDependencies, uninstallDependencies, detec
 export type { ModuleInfo, ValidationResult, InstallResult, UninstallResult } from './validators/dependencies'
 
 // Bundler
-export { generateBundle, generateSourceFiles, stowBundle } from './bundler'
-export type { GenerateBundleOptions, GenerateBundleResult, StowBundleOptions, StowBundleResult, StowLanguage, BareRpcLimits, EsmToCjsStats } from './bundler'
+export { generateBundle, generateSourceFiles, stowBundle, loadClientExtension } from './bundler'
+export type { GenerateBundleOptions, GenerateBundleResult, StowBundleOptions, StowBundleResult, StowLanguage, BareRpcLimits, EsmToCjsStats, ClientExtension, ClientAddition, ClientContext } from './bundler'
 
 // Generators
 export { generateEntryPoint } from './generators/entry'

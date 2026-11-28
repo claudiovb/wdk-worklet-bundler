@@ -8,7 +8,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { generateBundle } from '../../src/bundler'
+import { generateBundle, type ClientExtension } from '../../src/bundler'
 import type { ResolvedConfig } from '../../src/config/types'
 import { listFiles, readBundleFile, readStowedBundle, standInServerSource, writeFixtureFile, writeStandInWdkProject } from '../helpers/stow-fixture'
 
@@ -320,6 +320,51 @@ describe('generateBundle', () => {
       'Sources/WdkWorklet/Harness.swift',
       'Sources/WdkWorklet/index.bundle'
     ])
+  })
+
+  describe('with a client extension', () => {
+    const ADDITION = '\npublic func extended() -> Bool { true }\n'
+    const clientExtension: ClientExtension = {
+      name: 'wdk-core-swift',
+      languages: { swift: { generate: () => ({ source: ADDITION }) } }
+    }
+
+    it('should append the code of the extension to the generated client', async () => {
+      // Arrange
+      const plain = makeConfig()
+      const extended = makeConfig()
+      await generateBundle(plain, { silent: true })
+
+      // Act
+      const result = await generateBundle(extended, { silent: true, clientExtension })
+
+      // Assert
+      const clientFile = 'Sources/WdkWorklet/Client.swift'
+      expect(result.success).toBe(true)
+      expect(fs.readFileSync(path.join(extended.outputDir, clientFile), 'utf-8'))
+        .toBe(fs.readFileSync(path.join(plain.outputDir, clientFile), 'utf-8') + ADDITION)
+    })
+
+    it('should fail with the hrpc transport and leave the package of an earlier run as it is', async () => {
+      // Arrange
+      const config = makeConfig({ transport: 'hrpc' })
+      await generateBundle(config, { silent: true })
+      const filesBefore = listFiles(config.outputDir)
+
+      // Act
+      const result = await generateBundle(config, { silent: true, clientExtension })
+
+      // Assert
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("The client extension 'wdk-core-swift' needs transport 'bare-rpc': no client is generated with 'hrpc'.")
+      expect(listFiles(config.outputDir)).toEqual(filesBefore)
+      expect(filesBefore).toEqual([
+        '.wdk-worklet-bundler',
+        'Package.swift',
+        'Sources/WdkWorklet/Harness.swift',
+        'Sources/WdkWorklet/index.bundle'
+      ])
+    })
   })
 
   it('should give the frame limits of the config to the bare-rpc provider', async () => {

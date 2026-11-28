@@ -45,6 +45,30 @@ export interface BareRpcLimits {
   maxBufferedBytes?: number
 }
 
+/** What bare-stow gives a client generator: the role, and the options of the language. */
+export interface ClientContext {
+  role: 'client'
+  options: Record<string, unknown>
+}
+
+/** What a client extension adds for one language. */
+export interface ClientAddition {
+  /** Code appended to the client file bare-stow generates (`Client.swift`, `Client.kt`). */
+  source: string
+  /** Dependencies added to the manifest of the host package, as the language of bare-stow takes them. */
+  dependencies?: Record<string, unknown>
+}
+
+/**
+ * Adds code and dependencies to the `bare-rpc` client of the host package, per
+ * language. Shaped like a bare-stow provider, but what `generate` returns is
+ * added to bare-stow's own client, not used in its place.
+ */
+export interface ClientExtension {
+  name: string
+  languages: Partial<Record<StowLanguage['name'], { generate: (context: ClientContext) => ClientAddition }>>
+}
+
 export interface StowBundleOptions {
   /** Absolute path of the entry module. */
   entry: string
@@ -65,6 +89,8 @@ export interface StowBundleOptions {
   transport: 'bare-rpc' | 'hrpc'
   /** Only with the 'bare-rpc' transport. */
   limits?: BareRpcLimits
+  /** Additions to the generated client. Only with the 'bare-rpc' transport. */
+  clientExtension?: ClientExtension
   /** JavaScript engine of the 'bare-kit' target. Defaults to bare-stow's own, 'v8'. */
   engine?: 'v8' | 'javascriptcore' | 'quickjs'
   /** Hosts to pack and link for. Defaults to every host of the target for the language. */
@@ -98,13 +124,19 @@ interface ServerProvider {
   languages: Record<string, unknown>
 }
 
+/** A bare-stow client provider, as its built-in `bare-rpc` one. */
+interface ClientProvider {
+  name: string
+  languages: Record<string, { generate: (context: ClientContext) => Required<ClientAddition> }>
+}
+
 /** The options of bare-stow this module sets. */
 interface StowOptions {
   language: StowLanguage['name']
   languageOptions: Record<string, unknown>
   targetOptions?: { engine: NonNullable<StowBundleOptions['engine']> }
   server: ServerProvider
-  client?: 'bare-rpc'
+  client?: 'bare-rpc' | ClientProvider
   hosts?: string[]
   defer?: string[]
   readModule?: ReadModule
@@ -129,6 +161,8 @@ const stow = require('bare-stow') as Stow
  *
  * @throws {Error} If the @tetherto/pear-wrk-wdk installed in the project is
  *   missing or does not export `createServerProvider`.
+ * @throws {Error} If a client extension is given with the 'hrpc' transport, or
+ *   has no generator for the language.
  * @throws {Error} Whatever bare-stow throws: an invalid language option, host
  *   or output folder name; a bare-module-traverse error with a `code` such as
  *   `MODULE_NOT_FOUND` (with `specifier` and `referrer`); or, when
@@ -139,13 +173,15 @@ export async function stowBundle (options: StowBundleOptions): Promise<StowBundl
   const { entry, out, projectRoot, target, transport, convertEsmToCjs = false, minify = true } = options
   const { name: language, ...languageOptions } = options.language
 
+  assertClientExtension(options.clientExtension, transport, language)
+
   const stats: EsmToCjsStats | null = convertEsmToCjs ? { converted: 0, packagesPatched: 0 } : null
 
   const artifacts = stow(pathToFileURL(entry), target, pathToFileURL(out), {
     language,
     languageOptions: defined(languageOptions),
     server: loadServerProvider(projectRoot, transport, options.limits),
-    ...(transport === 'bare-rpc' ? { client: 'bare-rpc' } : {}),
+    ...(transport === 'bare-rpc' ? { client: bareRpcClient(language, options.clientExtension) } : {}),
     ...(options.engine !== undefined ? { targetOptions: { engine: options.engine } } : {}),
     ...defined({ hosts: options.hosts, defer: options.defer }),
     // Converted .mjs modules are CommonJS now; storing them under .js keys
@@ -164,6 +200,77 @@ export async function stowBundle (options: StowBundleOptions): Promise<StowBundl
   }
 
   return { bundlePath, files, esmToCjs: stats }
+}
+
+/**
+ * Check that a client extension can be used with the transport and the language.
+ *
+ * @throws {Error} With the 'hrpc' transport, for which no client is generated.
+ * @throws {Error} If the extension has no generator for the language.
+ */
+export function assertClientExtension (
+  extension: ClientExtension | undefined,
+  transport: StowBundleOptions['transport'],
+  language: StowLanguage['name']
+): void {
+  if (extension === undefined) return
+
+  if (transport !== 'bare-rpc') {
+    throw new Error(`The client extension '${extension.name}' needs transport 'bare-rpc': no client is generated with '${transport}'.`)
+  }
+  if (extension.languages[language] === undefined) {
+    throw new Error(`The client extension '${extension.name}' has no generator for language '${language}'.`)
+  }
+}
+
+/**
+ * Load a client extension from a CommonJS module.
+ *
+ * @param modulePath - Absolute path of the module.
+ * @throws {Error} If the module cannot be loaded, or does not export
+ *   `{ name, languages }`.
+ */
+export function loadClientExtension (modulePath: string): ClientExtension {
+  const extension = createRequire(modulePath)(modulePath) as Partial<ClientExtension> | null
+
+  if (typeof extension?.name !== 'string' || typeof extension.languages !== 'object' || extension.languages === null) {
+    throw new Error(`The client extension ${modulePath} must export { name, languages }.`)
+  }
+
+  return extension as ClientExtension
+}
+
+/**
+ * The client given to bare-stow: its built-in `bare-rpc` one by name, or, with
+ * an extension, that one with the additions of the extension for the language.
+ */
+function bareRpcClient (language: StowLanguage['name'], extension?: ClientExtension): 'bare-rpc' | ClientProvider {
+  const addition = extension?.languages[language]
+
+  if (addition === undefined) return 'bare-rpc'
+
+  // bare-stow does not export its bare-rpc client generator, so it is loaded by
+  // file from the installed package, which is pinned to an exact version.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const builtIn = require(path.join(path.dirname(require.resolve('bare-stow/package')), 'lib/rpc/bare-rpc.js')) as ClientProvider
+
+  return {
+    name: builtIn.name,
+    languages: {
+      ...builtIn.languages,
+      [language]: {
+        generate (context) {
+          const client = builtIn.languages[language].generate(context)
+          const added = addition.generate(context)
+
+          return {
+            source: client.source + added.source,
+            dependencies: { ...client.dependencies, ...added.dependencies }
+          }
+        }
+      }
+    }
+  }
 }
 
 /**

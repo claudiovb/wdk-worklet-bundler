@@ -29,11 +29,14 @@ describe('README configuration reference', () => {
   })
 
   it('shows configs that the schema accepts', () => {
-    const configs = [...readme.matchAll(/^( *)```javascript\n([\s\S]*?module\.exports = \{[\s\S]*?\n\1\};)\n\1```/gm)].map((match) => {
-      const sandbox = { module: { exports: {} } }
-      vm.runInNewContext(match[2], sandbox)
-      return sandbox.module.exports
-    })
+    // Every JavaScript block that exports a config: the ones with networks.
+    const configs = [...readme.matchAll(/^( *)```javascript\n([\s\S]*?module\.exports = \{[\s\S]*?\n\1\};)\n\1```/gm)]
+      .filter((match) => match[2].includes('networks:'))
+      .map((match) => {
+        const sandbox = { module: { exports: {} } }
+        vm.runInNewContext(match[2], sandbox)
+        return sandbox.module.exports
+      })
 
     expect(configs).toHaveLength(2)
     for (const config of configs) {
